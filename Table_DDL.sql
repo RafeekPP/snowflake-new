@@ -2,6 +2,9 @@ CREATE DATABASE IF NOT EXISTS META_DATA_DB;
 
 CREATE SCHEMA IF NOT EXISTS META_DATA_DB.TABLES_SCHEMA;
 
+
+
+
 CREATE TABLE IF NOT EXISTS META_DATA_DB.TABLES_SCHEMA.TENANT_PROJECTS (
     TENANT VARCHAR,
     SUBTENANT VARCHAR,
@@ -10,10 +13,10 @@ CREATE TABLE IF NOT EXISTS META_DATA_DB.TABLES_SCHEMA.TENANT_PROJECTS (
 
 INSERT INTO META_DATA_DB.TABLES_SCHEMA.TENANT_PROJECTS (TENANT, SUBTENANT, PROJECT)
 VALUES
-    ('Central', 'ITSS', 'Purview'),
-    ('Central', 'ITSM', 'OAD'),
-    ('Central', 'REG', 'PSD'),
-    ('Central', 'REG', 'ODS'),
-    ('Retail', 'CBMFL', 'REMHUB'),
+    ('Central[CNTRL]', 'ITSS', 'Purview'),
+    ('Central[CNTRL]', 'ITSM', 'OAD'),
+    ('Central[CNTRL]', 'REG', 'PSD'),
+    ('Central[CNTRL]', 'REG', 'ODS'),
+    ('Retail[RTL]', 'CBMFL[MTR]', 'REMHUB'),
     ('Commercial', 'CBAFL', 'CBAFAL'),
-    ('Central', 'TRS', 'Securitization');
+    ('Central[CNTRL]', 'TRS', 'Securitization');
