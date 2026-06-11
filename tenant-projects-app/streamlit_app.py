@@ -5,7 +5,7 @@ conn = st.connection("snowflake", ttl=os.getenv("SNOWFLAKE_CONNECTION_TTL"))
 
 st.title("Tenant Projects")
 
-request_type = st.radio("Request Type", ["Generic Access Request", "Specific Database Object Access"], horizontal=True)
+request_type = st.radio("Request Type", ["Generic Access Request", "Specific Database Object Access", "AI Users Roles"], horizontal=True)
 
 st.markdown("""
 <style>
@@ -144,7 +144,7 @@ if request_type == "Generic Access Request":
         num_rpt = st.selectbox("Number of users needed access [RPT Role]", list(range(0, 11)), key="num_rpt")
         for i in range(1, num_rpt + 1):
             st.text_input(f"RPT User-{i} Email", key=f"rpt_user_email_{i}")
-else:
+elif request_type == "Specific Database Object Access":
     mirrored_access_sdo = st.radio("Mirrored access of existing user", ["Yes", "No"], horizontal=True, key="sdo_mirrored")
     if mirrored_access_sdo == "Yes":
         mirror_username_sdo = st.text_input("Provide the username to be mirrored", key="sdo_mirror_username")
@@ -167,8 +167,6 @@ else:
         with col3:
             selected_project = st.selectbox("Select Project", projects, key="sdo_project")
 
-        st.subheader("Environment to which access is needed")
-
         import re
         tenant_abbr = re.search(r'\[(.+?)\]', selected_tenant)
         subtenant_abbr = re.search(r'\[(.+?)\]', selected_subtenant)
@@ -178,94 +176,210 @@ else:
         if "selected_schemas_sdo" not in st.session_state or not isinstance(st.session_state.selected_schemas_sdo, dict):
             st.session_state.selected_schemas_sdo = {}
 
+        access_mode = st.radio("Access Mode", ["All Users need same access", "Users need different access"], horizontal=True, key="sdo_access_mode")
+
         environments = [("Dev", "DEV"), ("SIT", "SIT"), ("ST", "ST"), ("UAT", "UAT"), ("PreProd", "PREPROD"), ("Prod", "PROD")]
 
-        for env_label, env_code in environments:
-            env_row = st.columns([1, 1, 1, 1, 1, 1])
-            with env_row[0]:
-                env_checked = st.checkbox(env_label, key=f"sdo_env_{env_code}")
-            obj_selections = {}
-            if env_checked:
-                with env_row[1]:
-                    obj_selections["Tables"] = st.checkbox("Tables", key=f"sdo_obj_{env_code}_Tables")
-                with env_row[2]:
-                    obj_selections["Functions"] = st.checkbox("Functions", key=f"sdo_obj_{env_code}_Functions")
-                with env_row[3]:
-                    obj_selections["Procedures"] = st.checkbox("Procedures", key=f"sdo_obj_{env_code}_Procedures")
-                with env_row[4]:
-                    obj_selections["Views"] = st.checkbox("Views", key=f"sdo_obj_{env_code}_Views")
-                with env_row[5]:
-                    obj_selections["Stages"] = st.checkbox("Stages", key=f"sdo_obj_{env_code}_Stages")
+        if access_mode == "All Users need same access":
+            st.subheader("Environment to which access is needed")
 
-                db_name = f"{tenant_code}_{subtenant_code}_{selected_project}_{env_code}_DB"
-                try:
-                    schema_df = conn.query(f"SELECT SCHEMA_NAME FROM {db_name}.INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME != 'INFORMATION_SCHEMA' ORDER BY SCHEMA_NAME")
-                    if not schema_df.empty:
-                        schema_list = [f"{db_name}.{row['SCHEMA_NAME']}" for _, row in schema_df.iterrows()]
-                    else:
-                        schema_list = []
-                except Exception:
-                    schema_list = []
+            selected_envs = []
+            env_cols = st.columns(len(environments))
+            for idx, (env_label, env_code) in enumerate(environments):
+                with env_cols[idx]:
+                    env_checked = st.checkbox(env_label, key=f"sdo_env_{env_code}")
+                if env_checked:
+                    selected_envs.append((env_label, env_code))
 
-                if schema_list:
-                    individual_selections = {}
-                    for schema in schema_list:
-                        individual_selections[schema] = st.checkbox(schema, key=f"sdo_add_{env_code}_{schema}")
+            if selected_envs:
+                role_combinations = ["Read", "Read/Write", "Read/Write/Create"]
+                selected_role = st.radio("Select role", role_combinations, horizontal=True, key="sdo_role_select")
+                num_users = st.selectbox("Number of users needed access", list(range(1, 11)), key="sdo_num_users")
+                for i in range(1, num_users + 1):
+                    st.text_input(f"User-{i} Email", key=f"sdo_user_email_{i}")
 
-                    # Determine selected schemas
-                    chosen_schemas = [s for s, c in individual_selections.items() if c]
+                st.subheader("Select Object Types")
+                obj_col1, obj_col2, obj_col3, obj_col4, obj_col5 = st.columns(5)
+                with obj_col1:
+                    obj_tables = st.checkbox("Tables", key="sdo_obj_Tables")
+                with obj_col2:
+                    obj_functions = st.checkbox("Functions", key="sdo_obj_Functions")
+                with obj_col3:
+                    obj_procedures = st.checkbox("Procedures", key="sdo_obj_Procedures")
+                with obj_col4:
+                    obj_views = st.checkbox("Views", key="sdo_obj_Views")
+                with obj_col5:
+                    obj_stages = st.checkbox("Stages", key="sdo_obj_Stages")
 
-                    # List objects for each selected schema based on object type checkboxes
+                obj_selections = {
+                    "Tables": obj_tables,
+                    "Functions": obj_functions,
+                    "Procedures": obj_procedures,
+                    "Views": obj_views,
+                    "Stages": obj_stages,
+                }
+                selected_obj_types = [ot for ot, oc in obj_selections.items() if oc]
+
+                if selected_obj_types:
+                    for env_label, env_code in selected_envs:
+                        db_name = f"{tenant_code}_{subtenant_code}_{selected_project}_{env_code}_DB"
+                        try:
+                            schema_df = conn.query(f"SELECT SCHEMA_NAME FROM {db_name}.INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME != 'INFORMATION_SCHEMA' ORDER BY SCHEMA_NAME")
+                            if not schema_df.empty:
+                                schema_list = [f"{db_name}.{row['SCHEMA_NAME']}" for _, row in schema_df.iterrows()]
+                            else:
+                                schema_list = []
+                        except Exception:
+                            schema_list = []
+
+                        if schema_list:
+                            st.write("**Schema List**")
+                            individual_selections = {}
+                            for schema in schema_list:
+                                individual_selections[schema] = st.checkbox(schema, key=f"sdo_add_{env_code}_{schema}")
+
+                            chosen_schemas = [s for s, c in individual_selections.items() if c]
+
+                            for chosen_schema in chosen_schemas:
+                                for obj_type in selected_obj_types:
+                                    if obj_type == "Tables":
+                                        query = f"SELECT TABLE_NAME FROM {chosen_schema.split('.')[0]}.INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{chosen_schema.split('.')[1]}' AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME"
+                                    elif obj_type == "Views":
+                                        query = f"SELECT TABLE_NAME FROM {chosen_schema.split('.')[0]}.INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{chosen_schema.split('.')[1]}' AND TABLE_TYPE = 'VIEW' ORDER BY TABLE_NAME"
+                                    elif obj_type == "Functions":
+                                        query = f"SELECT FUNCTION_NAME FROM {chosen_schema.split('.')[0]}.INFORMATION_SCHEMA.FUNCTIONS WHERE FUNCTION_SCHEMA = '{chosen_schema.split('.')[1]}' ORDER BY FUNCTION_NAME"
+                                    elif obj_type == "Procedures":
+                                        query = f"SELECT PROCEDURE_NAME FROM {chosen_schema.split('.')[0]}.INFORMATION_SCHEMA.PROCEDURES WHERE PROCEDURE_SCHEMA = '{chosen_schema.split('.')[1]}' ORDER BY PROCEDURE_NAME"
+                                    elif obj_type == "Stages":
+                                        query = f"SHOW STAGES IN {chosen_schema}"
+
+                                    try:
+                                        if obj_type == "Stages":
+                                            obj_df = conn.query(query)
+                                            obj_names = obj_df["name"].tolist() if not obj_df.empty else []
+                                        else:
+                                            obj_df = conn.query(query)
+                                            obj_names = obj_df.iloc[:, 0].tolist() if not obj_df.empty else []
+                                    except Exception:
+                                        obj_names = []
+
+                                    if obj_names:
+                                        state_key = f"sdo_selected_{env_code}_{chosen_schema}_{obj_type}"
+                                        if state_key not in st.session_state:
+                                            st.session_state[state_key] = []
+
+                                        available = [o for o in obj_names if o not in st.session_state[state_key]]
+                                        obj_left, obj_right = st.columns(2)
+
+                                        with obj_left:
+                                            st.write(f"**Available {obj_type.lower()} in {chosen_schema}**")
+                                            for obj_name in available:
+                                                if st.button(f"➡ {obj_name}", key=f"sdo_add_{env_code}_{chosen_schema}_{obj_type}_{obj_name}"):
+                                                    st.session_state[state_key].append(obj_name)
+                                                    st.rerun()
+
+                                        with obj_right:
+                                            st.write(f"**Selected {obj_type.lower()}**")
+                                            for obj_name in st.session_state[state_key]:
+                                                if st.button(f"⬅ {obj_name}", key=f"sdo_rem_{env_code}_{chosen_schema}_{obj_type}_{obj_name}"):
+                                                    st.session_state[state_key].remove(obj_name)
+                                                    st.rerun()
+        else:
+            num_users_diff = st.selectbox("Number of users needed access", list(range(1, 11)), key="sdo_diff_num_users")
+
+            for i in range(1, num_users_diff + 1):
+                col_email, col_role = st.columns([2, 3])
+                with col_email:
+                    st.text_input(f"User-{i} Email", key=f"sdo_diff_user_email_{i}")
+                with col_role:
+                    st.radio("Role", ["Read", "Read/Write", "Read/Write/Create"], horizontal=True, key=f"sdo_diff_role_{i}")
+                env_cols = st.columns(len(environments))
+                user_selected_envs = []
+                for idx, (env_label, env_code) in enumerate(environments):
+                    with env_cols[idx]:
+                        if st.checkbox(env_label, key=f"sdo_diff_env_{i}_{env_code}"):
+                            user_selected_envs.append((env_label, env_code))
+
+                for env_label, env_code in user_selected_envs:
+                    st.write(f"**{env_label}-Objects-User{i}**")
+                    obj_row = st.columns(5)
+                    obj_selections = {}
+                    with obj_row[0]:
+                        obj_selections["Tables"] = st.checkbox("Tables", key=f"sdo_diff_obj_{i}_{env_code}_Tables")
+                    with obj_row[1]:
+                        obj_selections["Functions"] = st.checkbox("Functions", key=f"sdo_diff_obj_{i}_{env_code}_Functions")
+                    with obj_row[2]:
+                        obj_selections["Procedures"] = st.checkbox("Procedures", key=f"sdo_diff_obj_{i}_{env_code}_Procedures")
+                    with obj_row[3]:
+                        obj_selections["Views"] = st.checkbox("Views", key=f"sdo_diff_obj_{i}_{env_code}_Views")
+                    with obj_row[4]:
+                        obj_selections["Stages"] = st.checkbox("Stages", key=f"sdo_diff_obj_{i}_{env_code}_Stages")
+
+                    db_name = f"{tenant_code}_{subtenant_code}_{selected_project}_{env_code}_DB"
                     selected_obj_types = [ot for ot, oc in obj_selections.items() if oc]
 
-                    for chosen_schema in chosen_schemas:
-                        for obj_type in selected_obj_types:
-                            if obj_type == "Tables":
-                                query = f"SELECT TABLE_NAME FROM {chosen_schema.split('.')[0]}.INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{chosen_schema.split('.')[1]}' AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME"
-                            elif obj_type == "Views":
-                                query = f"SELECT TABLE_NAME FROM {chosen_schema.split('.')[0]}.INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{chosen_schema.split('.')[1]}' AND TABLE_TYPE = 'VIEW' ORDER BY TABLE_NAME"
-                            elif obj_type == "Functions":
-                                query = f"SELECT FUNCTION_NAME FROM {chosen_schema.split('.')[0]}.INFORMATION_SCHEMA.FUNCTIONS WHERE FUNCTION_SCHEMA = '{chosen_schema.split('.')[1]}' ORDER BY FUNCTION_NAME"
-                            elif obj_type == "Procedures":
-                                query = f"SELECT PROCEDURE_NAME FROM {chosen_schema.split('.')[0]}.INFORMATION_SCHEMA.PROCEDURES WHERE PROCEDURE_SCHEMA = '{chosen_schema.split('.')[1]}' ORDER BY PROCEDURE_NAME"
-                            elif obj_type == "Stages":
-                                query = f"SHOW STAGES IN {chosen_schema}"
+                    if selected_obj_types:
+                        try:
+                            schema_df = conn.query(f"SELECT SCHEMA_NAME FROM {db_name}.INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME != 'INFORMATION_SCHEMA' ORDER BY SCHEMA_NAME")
+                            if not schema_df.empty:
+                                schema_list = [f"{db_name}.{row['SCHEMA_NAME']}" for _, row in schema_df.iterrows()]
+                            else:
+                                schema_list = []
+                        except Exception:
+                            schema_list = []
 
-                            try:
-                                if obj_type == "Stages":
-                                    obj_df = conn.query(query)
-                                    obj_names = obj_df["name"].tolist() if not obj_df.empty else []
-                                else:
-                                    obj_df = conn.query(query)
-                                    obj_names = obj_df.iloc[:, 0].tolist() if not obj_df.empty else []
-                            except Exception:
-                                obj_names = []
+                        if schema_list:
+                            st.write("**Schema List**")
+                            individual_selections = {}
+                            for schema in schema_list:
+                                individual_selections[schema] = st.checkbox(schema, key=f"sdo_diff_schema_{i}_{env_code}_{schema}")
 
-                            if obj_names:
-                                state_key = f"sdo_selected_{env_code}_{chosen_schema}_{obj_type}"
-                                if state_key not in st.session_state:
-                                    st.session_state[state_key] = []
+                            chosen_schemas = [s for s, c in individual_selections.items() if c]
 
-                                available = [o for o in obj_names if o not in st.session_state[state_key]]
-                                obj_left, obj_right = st.columns(2)
+                            for chosen_schema in chosen_schemas:
+                                for obj_type in selected_obj_types:
+                                    if obj_type == "Tables":
+                                        query = f"SELECT TABLE_NAME FROM {chosen_schema.split('.')[0]}.INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{chosen_schema.split('.')[1]}' AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME"
+                                    elif obj_type == "Views":
+                                        query = f"SELECT TABLE_NAME FROM {chosen_schema.split('.')[0]}.INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{chosen_schema.split('.')[1]}' AND TABLE_TYPE = 'VIEW' ORDER BY TABLE_NAME"
+                                    elif obj_type == "Functions":
+                                        query = f"SELECT FUNCTION_NAME FROM {chosen_schema.split('.')[0]}.INFORMATION_SCHEMA.FUNCTIONS WHERE FUNCTION_SCHEMA = '{chosen_schema.split('.')[1]}' ORDER BY FUNCTION_NAME"
+                                    elif obj_type == "Procedures":
+                                        query = f"SELECT PROCEDURE_NAME FROM {chosen_schema.split('.')[0]}.INFORMATION_SCHEMA.PROCEDURES WHERE PROCEDURE_SCHEMA = '{chosen_schema.split('.')[1]}' ORDER BY PROCEDURE_NAME"
+                                    elif obj_type == "Stages":
+                                        query = f"SHOW STAGES IN {chosen_schema}"
 
-                                with obj_left:
-                                    st.write(f"**Available {obj_type.lower()} in {chosen_schema}**")
-                                    for obj_name in available:
-                                        if st.button(f"➡ {obj_name}", key=f"sdo_add_{env_code}_{chosen_schema}_{obj_type}_{obj_name}"):
-                                            st.session_state[state_key].append(obj_name)
-                                            st.rerun()
+                                    try:
+                                        if obj_type == "Stages":
+                                            obj_df = conn.query(query)
+                                            obj_names = obj_df["name"].tolist() if not obj_df.empty else []
+                                        else:
+                                            obj_df = conn.query(query)
+                                            obj_names = obj_df.iloc[:, 0].tolist() if not obj_df.empty else []
+                                    except Exception:
+                                        obj_names = []
 
-                                with obj_right:
-                                    st.write(f"**Selected {obj_type.lower()}**")
-                                    for obj_name in st.session_state[state_key]:
-                                        if st.button(f"⬅ {obj_name}", key=f"sdo_rem_{env_code}_{chosen_schema}_{obj_type}_{obj_name}"):
-                                            st.session_state[state_key].remove(obj_name)
-                                            st.rerun()
+                                    if obj_names:
+                                        state_key = f"sdo_diff_selected_{i}_{env_code}_{chosen_schema}_{obj_type}"
+                                        if state_key not in st.session_state:
+                                            st.session_state[state_key] = []
 
-        num_users = st.selectbox("Number of users needed access", list(range(1, 11)), key="sdo_num_users")
-        role_combinations = ["Read", "Read/Write", "Read/Write/Create"]
-        st.write("**Roles Needed**")
-        selected_role = st.radio("Select role", role_combinations, horizontal=True, key="sdo_role_select")
-        for i in range(1, num_users + 1):
-            st.text_input(f"User-{i} Email", key=f"sdo_user_email_{i}")
+                                        available = [o for o in obj_names if o not in st.session_state[state_key]]
+                                        obj_left, obj_right = st.columns(2)
+
+                                        with obj_left:
+                                            st.write(f"**Available {obj_type.lower()} in {chosen_schema}**")
+                                            for obj_name in available:
+                                                if st.button(f"➡ {obj_name}", key=f"sdo_diff_add_{i}_{env_code}_{chosen_schema}_{obj_type}_{obj_name}"):
+                                                    st.session_state[state_key].append(obj_name)
+                                                    st.rerun()
+
+                                        with obj_right:
+                                            st.write(f"**Selected {obj_type.lower()}**")
+                                            for obj_name in st.session_state[state_key]:
+                                                if st.button(f"⬅ {obj_name}", key=f"sdo_diff_rem_{i}_{env_code}_{chosen_schema}_{obj_type}_{obj_name}"):
+                                                    st.session_state[state_key].remove(obj_name)
+                                                    st.rerun()
+else:
+    st.subheader("AI Users & Roles")
+    st.info("This section is under construction.")
