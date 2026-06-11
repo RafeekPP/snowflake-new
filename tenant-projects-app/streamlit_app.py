@@ -3,7 +3,7 @@ import streamlit as st
 
 conn = st.connection("snowflake", ttl=os.getenv("SNOWFLAKE_CONNECTION_TTL"))
 
-st.title("Tenant Projects")
+st.title("User Access Details")
 
 request_type = st.radio("Request Type", ["Generic Access Request", "Specific Database Object Access", "AI Users Roles"], horizontal=True)
 
@@ -19,6 +19,73 @@ st.markdown("""
     }
     [data-testid="stFormSubmitButton"], .stTextInput, .stSelectbox {
         text-align: left;
+    }
+    .stApp {
+        background: linear-gradient(135deg, #e8f4f8 0%, #d4e9f7 50%, #c8dff0 100%);
+    }
+    .stApp > header {
+        background-color: transparent;
+    }
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #d4e9f7 0%, #b8d4e8 100%);
+    }
+    h1 {
+        color: #1b4965 !important;
+        font-weight: 800 !important;
+        font-size: 2.2rem !important;
+        letter-spacing: 0.5px;
+    }
+    h2, h3, [data-testid="stSubheader"] {
+        color: #1b4965 !important;
+        font-weight: 700 !important;
+        font-size: 1.3rem !important;
+        border-bottom: 2px solid #2c6e8a;
+        padding-bottom: 0.3rem;
+        letter-spacing: 0.3px;
+    }
+    .stRadio > label, .stCheckbox > label, .stSelectbox > label, .stTextInput > label {
+        color: #1a3a4a !important;
+        font-weight: 600 !important;
+        font-size: 0.95rem !important;
+    }
+    [data-testid="stMarkdownContainer"] p, [data-testid="stMarkdownContainer"] strong {
+        color: #1a3a4a !important;
+        font-weight: 600 !important;
+    }
+    .stTextInput input, .stSelectbox [data-baseweb="select"], .stRadio [role="radiogroup"] label {
+        font-size: 0.9rem !important;
+        min-height: 38px !important;
+        padding: 6px 12px !important;
+    }
+    .stTextInput input {
+        border: 1px solid #2c6e8a;
+        border-radius: 8px;
+    }
+    .stSelectbox [data-baseweb="select"] {
+        border-radius: 8px;
+    }
+    .stRadio [role="radiogroup"] label {
+        background-color: rgba(255, 255, 255, 0.6);
+        border: 1px solid #2c6e8a;
+        border-radius: 8px;
+        color: #1a3a4a;
+    }
+    .stCheckbox [data-testid="stCheckbox"] {
+        background-color: rgba(255, 255, 255, 0.4);
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-size: 0.9rem !important;
+    }
+    button[kind="secondary"], button[kind="primary"] {
+        font-size: 0.9rem !important;
+        min-height: 38px !important;
+        border-radius: 8px !important;
+        padding: 6px 16px !important;
+    }
+    [data-testid="stSelectbox"] label, [data-testid="stTextInput"] label {
+        color: #1b4965 !important;
+        font-weight: 600 !important;
+        font-size: 0.95rem !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -40,7 +107,7 @@ if request_type == "Generic Access Request":
 
         col1, col2, col3 = st.columns(3)
         with col1:
-            selected_tenant = st.selectbox("Select Tenant", tenants)
+            selected_tenant = st.selectbox("Tenants", tenants)
 
         if selected_tenant == "New":
             tenant_name = st.text_input("Enter Tenant Name")
@@ -53,7 +120,7 @@ if request_type == "Generic Access Request":
             filtered_by_tenant = df[df["TENANT"] == selected_tenant]
             subtenants = sorted(filtered_by_tenant["SUBTENANT"].unique()) + ["New"]
             with col2:
-                selected_subtenant = st.selectbox("Select Subtenant", subtenants)
+                selected_subtenant = st.selectbox("Subtenants", subtenants)
 
             if selected_subtenant == "New":
                 subtenant_name = st.text_input("Enter Subtenant Name")
@@ -65,7 +132,7 @@ if request_type == "Generic Access Request":
                 filtered_by_subtenant = filtered_by_tenant[filtered_by_tenant["SUBTENANT"] == selected_subtenant]
                 projects = sorted(filtered_by_subtenant["PROJECT"].unique()) + ["New"]
                 with col3:
-                    selected_project = st.selectbox("Select Project", projects)
+                    selected_project = st.selectbox("Projects", projects)
 
                 if selected_project == "New":
                     project_name = st.text_input("Enter Project Name")
@@ -155,17 +222,17 @@ elif request_type == "Specific Database Object Access":
 
         col1, col2, col3 = st.columns(3)
         with col1:
-            selected_tenant = st.selectbox("Select Tenant", tenants, key="sdo_tenant")
+            selected_tenant = st.selectbox("Tenants", tenants, key="sdo_tenant")
 
         filtered_by_tenant = df[df["TENANT"] == selected_tenant]
         subtenants = sorted(filtered_by_tenant["SUBTENANT"].unique())
         with col2:
-            selected_subtenant = st.selectbox("Select Subtenant", subtenants, key="sdo_subtenant")
+            selected_subtenant = st.selectbox("Subtenants", subtenants, key="sdo_subtenant")
 
         filtered_by_subtenant = filtered_by_tenant[filtered_by_tenant["SUBTENANT"] == selected_subtenant]
         projects = sorted(filtered_by_subtenant["PROJECT"].unique())
         with col3:
-            selected_project = st.selectbox("Select Project", projects, key="sdo_project")
+            selected_project = st.selectbox("Projects", projects, key="sdo_project")
 
         import re
         tenant_abbr = re.search(r'\[(.+?)\]', selected_tenant)
