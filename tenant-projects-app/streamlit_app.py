@@ -5,7 +5,7 @@ conn = st.connection("snowflake", ttl=os.getenv("SNOWFLAKE_CONNECTION_TTL"))
 
 st.title("User Access Details")
 
-request_type = st.radio("Request Type", ["Generic Access Request", "Specific Database Object Access", "AI Users Roles"], horizontal=True)
+request_type = st.radio("Request Type", ["Generic Access Request :[ DOP/ETL/RPT ]", "Specific Database Object Access", "AI Users Roles"], horizontal=True)
 
 st.markdown("""
 <style>
@@ -96,11 +96,28 @@ def load_data():
 
 df = load_data()
 
-if request_type == "Generic Access Request":
-    mirrored_access = st.radio("Mirrored access of existing user", ["Yes", "No"], horizontal=True)
+def clear_form_state(prefixes):
+    """Clear all session state keys that start with any of the given prefixes."""
+    keys_to_clear = []
+    for key in list(st.session_state.keys()):
+        for prefix in prefixes:
+            if key.startswith(prefix):
+                keys_to_clear.append(key)
+                break
+    for key in keys_to_clear:
+        del st.session_state[key]
+
+# Reset counters to force fresh widget keys after submit
+if "generic_reset" not in st.session_state:
+    st.session_state["generic_reset"] = 0
+if "sdo_reset" not in st.session_state:
+    st.session_state["sdo_reset"] = 0
+
+if request_type == "Generic Access Request :[ DOP/ETL/RPT ]":
+    mirrored_access = st.radio("Mirrored access of existing user", ["Yes", "No"], index=None, horizontal=True, key=f"generic_mirrored_{st.session_state['generic_reset']}")
     if mirrored_access == "Yes":
         mirror_username = st.text_input("Provide the username to be mirrored")
-    else:
+    elif mirrored_access == "No":
         tenants = sorted(df["TENANT"].unique()) + ["New"]
         selected_subtenant = None
         selected_project = None
@@ -142,80 +159,104 @@ if request_type == "Generic Access Request":
                 else:
                     st.success(f"Selected: {selected_tenant} → {selected_subtenant} → {selected_project}")
 
-        st.subheader("Environment to which access is needed")
+        st.subheader("Environments to which access is needed")
 
-        show_schema_panes = (selected_tenant != "New"
-            and selected_subtenant is not None and selected_subtenant != "New"
-            and selected_project is not None and selected_project != "New")
+        gr = st.session_state["generic_reset"]
+        env_options = [("Dev", "DEV"), ("SIT", "SIT"), ("ST", "ST"), ("UAT", "UAT"), ("PreProd", "PREPROD"), ("Prod", "PROD")]
+        selected_envs = []
+        env_cols = st.columns(len(env_options))
+        for idx, (env_label, env_code) in enumerate(env_options):
+            with env_cols[idx]:
+                if st.checkbox(env_label, key=f"env_{env_code}_{gr}"):
+                    selected_envs.append((env_label, env_code))
 
-        if show_schema_panes:
-            import re
-            tenant_abbr = re.search(r'\[(.+?)\]', selected_tenant)
-            subtenant_abbr = re.search(r'\[(.+?)\]', selected_subtenant)
-            tenant_code = tenant_abbr.group(1) if tenant_abbr else selected_tenant
-            subtenant_code = subtenant_abbr.group(1) if subtenant_abbr else selected_subtenant
+        # For each selected environment, show DOP/ETL/RPT user inputs
+        for env_label, env_code in selected_envs:
+            st.markdown(f"---")
+            num_dop = st.selectbox(f"Number of users needed access [{env_label}-DOP Role]", list(range(0, 11)), key=f"num_dop_{env_code}_{gr}")
+            for i in range(1, num_dop + 1):
+                st.text_input(f"{env_label}-DOP User-{i} Email", key=f"dop_user_email_{env_code}_{i}_{gr}")
 
-            if "selected_schemas" not in st.session_state or not isinstance(st.session_state.selected_schemas, dict):
-                st.session_state.selected_schemas = {}
+            num_etl = st.selectbox(f"Number of users needed access [{env_label}-ETL Role]", list(range(0, 11)), key=f"num_etl_{env_code}_{gr}")
+            for i in range(1, num_etl + 1):
+                st.text_input(f"{env_label}-ETL User-{i} Email", key=f"etl_user_email_{env_code}_{i}_{gr}")
 
-            environments = [("Dev", "DEV"), ("SIT", "SIT"), ("ST", "ST"), ("UAT", "UAT"), ("PreProd", "PREPROD"), ("Prod", "PROD")]
+            num_rpt = st.selectbox(f"Number of users needed access [{env_label}-RPT Role]", list(range(0, 11)), key=f"num_rpt_{env_code}_{gr}")
+            for i in range(1, num_rpt + 1):
+                st.text_input(f"{env_label}-RPT User-{i} Email", key=f"rpt_user_email_{env_code}_{i}_{gr}")
 
-            for env_label, env_code in environments:
-                env_checked = st.checkbox(env_label, key=f"env_{env_code}")
-                if env_checked:
-                    db_name = f"{tenant_code}_{subtenant_code}_{selected_project}_{env_code}_DB"
-                    try:
-                        schema_df = conn.query(f"SELECT SCHEMA_NAME FROM {db_name}.INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME != 'INFORMATION_SCHEMA' ORDER BY SCHEMA_NAME")
-                        if not schema_df.empty:
-                            schema_list = [f"{db_name}.{row['SCHEMA_NAME']}" for _, row in schema_df.iterrows()]
-                        else:
-                            schema_list = []
-                    except Exception:
-                        schema_list = []
+        if "generic_submitted" not in st.session_state:
+            st.session_state["generic_submitted"] = False
 
-                    if schema_list:
-                        left_col, right_col = st.columns(2)
+        if st.button("Submit", key="generic_submit", disabled=st.session_state["generic_submitted"]):
+            # Determine tenant/subtenant/project values
+            if selected_tenant == "New":
+                t_val = st.session_state.get("tenant_name", tenant_name if 'tenant_name' in dir() else None)
+                s_val = st.session_state.get("subtenant_name", subtenant_name if 'subtenant_name' in dir() else None)
+                p_val = st.session_state.get("project_name", project_name if 'project_name' in dir() else None)
+            elif selected_subtenant == "New":
+                t_val = selected_tenant
+                s_val = st.session_state.get("subtenant_name", subtenant_name if 'subtenant_name' in dir() else None)
+                p_val = st.session_state.get("project_name", project_name if 'project_name' in dir() else None)
+            elif selected_project == "New":
+                t_val = selected_tenant
+                s_val = selected_subtenant
+                p_val = st.session_state.get("project_name", project_name if 'project_name' in dir() else None)
+            else:
+                t_val = selected_tenant
+                s_val = selected_subtenant
+                p_val = selected_project
 
-                        with left_col:
-                            st.write(f"**Available Schemas ({env_label})**")
-                            all_selected = st.checkbox("All Schemas", key=f"all_{env_code}")
-                            individual_selections = {}
-                            if not all_selected:
-                                for schema in schema_list:
-                                    individual_selections[schema] = st.checkbox(schema, key=f"add_{env_code}_{schema}")
+            # Collect all users per environment and role type
+            users_to_insert = []
+            for env_label, env_code in selected_envs:
+                num_dop = st.session_state.get(f"num_dop_{env_code}_{gr}", 0)
+                for i in range(1, num_dop + 1):
+                    email = st.session_state.get(f"dop_user_email_{env_code}_{i}_{gr}", "")
+                    if email:
+                        users_to_insert.append((email, f"{env_label}-DOP Role", env_label))
+                num_etl = st.session_state.get(f"num_etl_{env_code}_{gr}", 0)
+                for i in range(1, num_etl + 1):
+                    email = st.session_state.get(f"etl_user_email_{env_code}_{i}_{gr}", "")
+                    if email:
+                        users_to_insert.append((email, f"{env_label}-ETL Role", env_label))
+                num_rpt = st.session_state.get(f"num_rpt_{env_code}_{gr}", 0)
+                for i in range(1, num_rpt + 1):
+                    email = st.session_state.get(f"rpt_user_email_{env_code}_{i}_{gr}", "")
+                    if email:
+                        users_to_insert.append((email, f"{env_label}-RPT Role", env_label))
 
-                        with right_col:
-                            st.write(f"**Selected Schemas ({env_label})**")
-                            if all_selected:
-                                st.write("✓ All Schemas")
-                            else:
-                                for schema, checked in individual_selections.items():
-                                    if checked:
-                                        st.write(f"✓ {schema}")
-        else:
-            env_dev = st.checkbox("Dev")
-            env_sit = st.checkbox("SIT")
-            env_st = st.checkbox("ST")
-            env_uat = st.checkbox("UAT")
-            env_preprod = st.checkbox("PreProd")
-            env_prod = st.checkbox("Prod")
+            if users_to_insert:
+                insert_count = 0
+                session = conn.session()
+                for user_email, role_type, env_label in users_to_insert:
+                    session.sql(
+                        f"""INSERT INTO META_DATA_DB.TABLES_SCHEMA.ACCESS_REQUEST
+                            (TENANT, SUBTENANT, PROJECT, REQUEST_TYPE, "USER", ENVIRONMENT, SCHEMA, OBJECTS, OBJECT_NAMES)
+                            VALUES ('{t_val}', '{s_val}', '{p_val}', '{role_type}', '{user_email}', '{env_label}', NULL, NULL, NULL)"""
+                    ).collect()
+                    insert_count += 1
+                st.session_state["generic_submitted"] = True
+                st.session_state["generic_reset"] += 1
+                st.rerun()
+            else:
+                st.warning("Please provide at least one user email before submitting.")
 
-        num_dop = st.selectbox("Number of users needed access [DOP Role]", list(range(0, 11)), key="num_dop")
-        for i in range(1, num_dop + 1):
-            st.text_input(f"DOP User-{i} Email", key=f"dop_user_email_{i}")
+        if st.session_state["generic_submitted"]:
+            st.success("Access request(s) submitted successfully. Refresh the page to submit again.")
 
-        num_etl = st.selectbox("Number of users needed access [ETL Role]", list(range(0, 11)), key="num_etl")
-        for i in range(1, num_etl + 1):
-            st.text_input(f"ETL User-{i} Email", key=f"etl_user_email_{i}")
+        if st.button("Display", key="generic_display"):
+            display_df = conn.query("SELECT * FROM META_DATA_DB.TABLES_SCHEMA.ACCESS_REQUEST")
+            if not display_df.empty:
+                st.dataframe(display_df, use_container_width=True)
+            else:
+                st.info("No records found in ACCESS_REQUEST table.")
 
-        num_rpt = st.selectbox("Number of users needed access [RPT Role]", list(range(0, 11)), key="num_rpt")
-        for i in range(1, num_rpt + 1):
-            st.text_input(f"RPT User-{i} Email", key=f"rpt_user_email_{i}")
 elif request_type == "Specific Database Object Access":
-    mirrored_access_sdo = st.radio("Mirrored access of existing user", ["Yes", "No"], horizontal=True, key="sdo_mirrored")
+    mirrored_access_sdo = st.radio("Mirrored access of existing user", ["Yes", "No"], index=None, horizontal=True, key=f"sdo_mirrored_{st.session_state['sdo_reset']}")
     if mirrored_access_sdo == "Yes":
         mirror_username_sdo = st.text_input("Provide the username to be mirrored", key="sdo_mirror_username")
-    else:
+    elif mirrored_access_sdo == "No":
         tenants = sorted(df["TENANT"].unique())
         selected_subtenant = None
         selected_project = None
@@ -243,8 +284,9 @@ elif request_type == "Specific Database Object Access":
         if "selected_schemas_sdo" not in st.session_state or not isinstance(st.session_state.selected_schemas_sdo, dict):
             st.session_state.selected_schemas_sdo = {}
 
-        access_mode = st.radio("Access Mode", ["All Users need same access", "Users need different access"], horizontal=True, key="sdo_access_mode")
+        access_mode = st.radio("Access Mode", ["All Users need same access", "Users need different access"], index=None, horizontal=True, key=f"sdo_access_mode_{st.session_state['sdo_reset']}")
 
+        sr = st.session_state["sdo_reset"]
         environments = [("Dev", "DEV"), ("SIT", "SIT"), ("ST", "ST"), ("UAT", "UAT"), ("PreProd", "PREPROD"), ("Prod", "PROD")]
 
         if access_mode == "All Users need same access":
@@ -254,29 +296,29 @@ elif request_type == "Specific Database Object Access":
             env_cols = st.columns(len(environments))
             for idx, (env_label, env_code) in enumerate(environments):
                 with env_cols[idx]:
-                    env_checked = st.checkbox(env_label, key=f"sdo_env_{env_code}")
+                    env_checked = st.checkbox(env_label, key=f"sdo_env_{env_code}_{sr}")
                 if env_checked:
                     selected_envs.append((env_label, env_code))
 
             if selected_envs:
                 role_combinations = ["Read", "Read/Write", "Read/Write/Create"]
-                selected_role = st.radio("Select role", role_combinations, horizontal=True, key="sdo_role_select")
-                num_users = st.selectbox("Number of users needed access", list(range(1, 11)), key="sdo_num_users")
+                selected_role = st.radio("Select role", role_combinations, index=None, horizontal=True, key=f"sdo_role_select_{sr}")
+                num_users = st.selectbox("Number of users needed access", list(range(1, 11)), key=f"sdo_num_users_{sr}")
                 for i in range(1, num_users + 1):
-                    st.text_input(f"User-{i} Email", key=f"sdo_user_email_{i}")
+                    st.text_input(f"User-{i} Email", key=f"sdo_user_email_{i}_{sr}")
 
                 st.subheader("Select Object Types")
                 obj_col1, obj_col2, obj_col3, obj_col4, obj_col5 = st.columns(5)
                 with obj_col1:
-                    obj_tables = st.checkbox("Tables", key="sdo_obj_Tables")
+                    obj_tables = st.checkbox("Tables", key=f"sdo_obj_Tables_{sr}")
                 with obj_col2:
-                    obj_functions = st.checkbox("Functions", key="sdo_obj_Functions")
+                    obj_functions = st.checkbox("Functions", key=f"sdo_obj_Functions_{sr}")
                 with obj_col3:
-                    obj_procedures = st.checkbox("Procedures", key="sdo_obj_Procedures")
+                    obj_procedures = st.checkbox("Procedures", key=f"sdo_obj_Procedures_{sr}")
                 with obj_col4:
-                    obj_views = st.checkbox("Views", key="sdo_obj_Views")
+                    obj_views = st.checkbox("Views", key=f"sdo_obj_Views_{sr}")
                 with obj_col5:
-                    obj_stages = st.checkbox("Stages", key="sdo_obj_Stages")
+                    obj_stages = st.checkbox("Stages", key=f"sdo_obj_Stages_{sr}")
 
                 obj_selections = {
                     "Tables": obj_tables,
@@ -303,7 +345,7 @@ elif request_type == "Specific Database Object Access":
                             st.write("**Schema List**")
                             individual_selections = {}
                             for schema in schema_list:
-                                individual_selections[schema] = st.checkbox(schema, key=f"sdo_add_{env_code}_{schema}")
+                                individual_selections[schema] = st.checkbox(schema, key=f"sdo_add_{env_code}_{schema}_{sr}")
 
                             chosen_schemas = [s for s, c in individual_selections.items() if c]
 
@@ -331,7 +373,7 @@ elif request_type == "Specific Database Object Access":
                                         obj_names = []
 
                                     if obj_names:
-                                        state_key = f"sdo_selected_{env_code}_{chosen_schema}_{obj_type}"
+                                        state_key = f"sdo_selected_{env_code}_{chosen_schema}_{obj_type}_{sr}"
                                         if state_key not in st.session_state:
                                             st.session_state[state_key] = []
 
@@ -341,30 +383,30 @@ elif request_type == "Specific Database Object Access":
                                         with obj_left:
                                             st.write(f"**Available {obj_type.lower()} in {chosen_schema}**")
                                             for obj_name in available:
-                                                if st.button(f"➡ {obj_name}", key=f"sdo_add_{env_code}_{chosen_schema}_{obj_type}_{obj_name}"):
+                                                if st.button(f"➡ {obj_name}", key=f"sdo_add_{env_code}_{chosen_schema}_{obj_type}_{obj_name}_{sr}"):
                                                     st.session_state[state_key].append(obj_name)
                                                     st.rerun()
 
                                         with obj_right:
                                             st.write(f"**Selected {obj_type.lower()}**")
                                             for obj_name in st.session_state[state_key]:
-                                                if st.button(f"⬅ {obj_name}", key=f"sdo_rem_{env_code}_{chosen_schema}_{obj_type}_{obj_name}"):
+                                                if st.button(f"⬅ {obj_name}", key=f"sdo_rem_{env_code}_{chosen_schema}_{obj_type}_{obj_name}_{sr}"):
                                                     st.session_state[state_key].remove(obj_name)
                                                     st.rerun()
-        else:
-            num_users_diff = st.selectbox("Number of users needed access", list(range(1, 11)), key="sdo_diff_num_users")
+        elif access_mode == "Users need different access":
+            num_users_diff = st.selectbox("Number of users needed access", list(range(1, 11)), key=f"sdo_diff_num_users_{sr}")
 
             for i in range(1, num_users_diff + 1):
                 col_email, col_role = st.columns([2, 3])
                 with col_email:
-                    st.text_input(f"User-{i} Email", key=f"sdo_diff_user_email_{i}")
+                    st.text_input(f"User-{i} Email", key=f"sdo_diff_user_email_{i}_{sr}")
                 with col_role:
-                    st.radio("Role", ["Read", "Read/Write", "Read/Write/Create"], horizontal=True, key=f"sdo_diff_role_{i}")
+                    st.radio("Role", ["Read", "Read/Write", "Read/Write/Create"], index=None, horizontal=True, key=f"sdo_diff_role_{i}_{sr}")
                 env_cols = st.columns(len(environments))
                 user_selected_envs = []
                 for idx, (env_label, env_code) in enumerate(environments):
                     with env_cols[idx]:
-                        if st.checkbox(env_label, key=f"sdo_diff_env_{i}_{env_code}"):
+                        if st.checkbox(env_label, key=f"sdo_diff_env_{i}_{env_code}_{sr}"):
                             user_selected_envs.append((env_label, env_code))
 
                 for env_label, env_code in user_selected_envs:
@@ -372,15 +414,15 @@ elif request_type == "Specific Database Object Access":
                     obj_row = st.columns(5)
                     obj_selections = {}
                     with obj_row[0]:
-                        obj_selections["Tables"] = st.checkbox("Tables", key=f"sdo_diff_obj_{i}_{env_code}_Tables")
+                        obj_selections["Tables"] = st.checkbox("Tables", key=f"sdo_diff_obj_{i}_{env_code}_Tables_{sr}")
                     with obj_row[1]:
-                        obj_selections["Functions"] = st.checkbox("Functions", key=f"sdo_diff_obj_{i}_{env_code}_Functions")
+                        obj_selections["Functions"] = st.checkbox("Functions", key=f"sdo_diff_obj_{i}_{env_code}_Functions_{sr}")
                     with obj_row[2]:
-                        obj_selections["Procedures"] = st.checkbox("Procedures", key=f"sdo_diff_obj_{i}_{env_code}_Procedures")
+                        obj_selections["Procedures"] = st.checkbox("Procedures", key=f"sdo_diff_obj_{i}_{env_code}_Procedures_{sr}")
                     with obj_row[3]:
-                        obj_selections["Views"] = st.checkbox("Views", key=f"sdo_diff_obj_{i}_{env_code}_Views")
+                        obj_selections["Views"] = st.checkbox("Views", key=f"sdo_diff_obj_{i}_{env_code}_Views_{sr}")
                     with obj_row[4]:
-                        obj_selections["Stages"] = st.checkbox("Stages", key=f"sdo_diff_obj_{i}_{env_code}_Stages")
+                        obj_selections["Stages"] = st.checkbox("Stages", key=f"sdo_diff_obj_{i}_{env_code}_Stages_{sr}")
 
                     db_name = f"{tenant_code}_{subtenant_code}_{selected_project}_{env_code}_DB"
                     selected_obj_types = [ot for ot, oc in obj_selections.items() if oc]
@@ -399,7 +441,7 @@ elif request_type == "Specific Database Object Access":
                             st.write("**Schema List**")
                             individual_selections = {}
                             for schema in schema_list:
-                                individual_selections[schema] = st.checkbox(schema, key=f"sdo_diff_schema_{i}_{env_code}_{schema}")
+                                individual_selections[schema] = st.checkbox(schema, key=f"sdo_diff_schema_{i}_{env_code}_{schema}_{sr}")
 
                             chosen_schemas = [s for s, c in individual_selections.items() if c]
 
@@ -427,7 +469,7 @@ elif request_type == "Specific Database Object Access":
                                         obj_names = []
 
                                     if obj_names:
-                                        state_key = f"sdo_diff_selected_{i}_{env_code}_{chosen_schema}_{obj_type}"
+                                        state_key = f"sdo_diff_selected_{i}_{env_code}_{chosen_schema}_{obj_type}_{sr}"
                                         if state_key not in st.session_state:
                                             st.session_state[state_key] = []
 
@@ -437,16 +479,225 @@ elif request_type == "Specific Database Object Access":
                                         with obj_left:
                                             st.write(f"**Available {obj_type.lower()} in {chosen_schema}**")
                                             for obj_name in available:
-                                                if st.button(f"➡ {obj_name}", key=f"sdo_diff_add_{i}_{env_code}_{chosen_schema}_{obj_type}_{obj_name}"):
+                                                if st.button(f"➡ {obj_name}", key=f"sdo_diff_add_{i}_{env_code}_{chosen_schema}_{obj_type}_{obj_name}_{sr}"):
                                                     st.session_state[state_key].append(obj_name)
                                                     st.rerun()
 
                                         with obj_right:
                                             st.write(f"**Selected {obj_type.lower()}**")
                                             for obj_name in st.session_state[state_key]:
-                                                if st.button(f"⬅ {obj_name}", key=f"sdo_diff_rem_{i}_{env_code}_{chosen_schema}_{obj_type}_{obj_name}"):
+                                                if st.button(f"⬅ {obj_name}", key=f"sdo_diff_rem_{i}_{env_code}_{chosen_schema}_{obj_type}_{obj_name}_{sr}"):
                                                     st.session_state[state_key].remove(obj_name)
                                                     st.rerun()
+
+        # Submit and Display buttons for Specific Database Object Access
+        if access_mode is not None:
+            if "sdo_submitted" not in st.session_state:
+                st.session_state["sdo_submitted"] = False
+
+            if st.button("Submit", key="sdo_submit", disabled=st.session_state["sdo_submitted"]):
+                t_val = selected_tenant
+                s_val = selected_subtenant
+                p_val = selected_project
+
+                rows_to_insert = []
+
+                if access_mode == "All Users need same access":
+                    # Collect user emails
+                    num_users = st.session_state.get(f"sdo_num_users_{sr}", 1)
+                    user_emails = []
+                    for i in range(1, num_users + 1):
+                        email = st.session_state.get(f"sdo_user_email_{i}_{sr}", "")
+                        if email:
+                            user_emails.append(email)
+
+                    selected_role = st.session_state.get(f"sdo_role_select_{sr}", "Read")
+
+                    # Collect selected objects per environment/schema/object_type
+                    for env_label, env_code in selected_envs:
+                        db_name = f"{tenant_code}_{subtenant_code}_{selected_project}_{env_code}_DB"
+                        # Find all state keys matching selected objects
+                        for key, selected_objs in st.session_state.items():
+                            if key.startswith(f"sdo_selected_{env_code}_") and key.endswith(f"_{sr}") and isinstance(selected_objs, list):
+                                # Parse schema and obj_type from key: sdo_selected_{env_code}_{schema}_{obj_type}_{sr}
+                                parts = key.replace(f"sdo_selected_{env_code}_", "", 1)
+                                # Remove trailing _{sr}
+                                parts = parts.rsplit(f"_{sr}", 1)[0]
+                                # Split on last underscore to get obj_type
+                                last_underscore = parts.rfind("_")
+                                if last_underscore > 0:
+                                    schema_name = parts[:last_underscore]
+                                    obj_type = parts[last_underscore + 1:]
+                                else:
+                                    continue
+
+                                for obj_name in selected_objs:
+                                    for user_email in user_emails:
+                                        rows_to_insert.append((user_email, selected_role, env_label, schema_name, obj_type.lower(), obj_name))
+                else:
+                    # Users need different access
+                    num_users_diff = st.session_state.get(f"sdo_diff_num_users_{sr}", 1)
+                    for i in range(1, num_users_diff + 1):
+                        user_email = st.session_state.get(f"sdo_diff_user_email_{i}_{sr}", "")
+                        user_role = st.session_state.get(f"sdo_diff_role_{i}_{sr}", "Read")
+                        if not user_email:
+                            continue
+
+                        # Find all state keys for this user's selected objects
+                        for key, selected_objs in st.session_state.items():
+                            if key.startswith(f"sdo_diff_selected_{i}_") and key.endswith(f"_{sr}") and isinstance(selected_objs, list):
+                                # Parse env_code, schema, obj_type from key: sdo_diff_selected_{i}_{env_code}_{schema}_{obj_type}_{sr}
+                                parts = key.replace(f"sdo_diff_selected_{i}_", "", 1)
+                                # Remove trailing _{sr}
+                                parts = parts.rsplit(f"_{sr}", 1)[0]
+                                # First part is env_code (up to first underscore after prefix)
+                                first_underscore = parts.find("_")
+                                if first_underscore < 0:
+                                    continue
+                                env_code = parts[:first_underscore]
+                                remainder = parts[first_underscore + 1:]
+                                # Last part is obj_type
+                                last_underscore = remainder.rfind("_")
+                                if last_underscore > 0:
+                                    schema_name = remainder[:last_underscore]
+                                    obj_type = remainder[last_underscore + 1:]
+                                else:
+                                    continue
+
+                                # Map env_code back to label
+                                env_label = env_code
+                                for el, ec in environments:
+                                    if ec == env_code:
+                                        env_label = el
+                                        break
+
+                                for obj_name in selected_objs:
+                                    rows_to_insert.append((user_email, user_role, env_label, schema_name, obj_type.lower(), obj_name))
+
+                if rows_to_insert:
+                    insert_count = 0
+                    session = conn.session()
+                    for user_email, role_type, env_label, schema_name, obj_type, obj_name in rows_to_insert:
+                        session.sql(
+                            f"""INSERT INTO META_DATA_DB.TABLES_SCHEMA.ACCESS_REQUEST
+                                (TENANT, SUBTENANT, PROJECT, REQUEST_TYPE, "USER", ENVIRONMENT, SCHEMA, OBJECTS, OBJECT_NAMES)
+                                VALUES ('{t_val}', '{s_val}', '{p_val}', '{role_type}', '{user_email}', '{env_label}', '{schema_name}', '{obj_type}', '{obj_name}')"""
+                        ).collect()
+                        insert_count += 1
+                    st.session_state["sdo_submitted"] = True
+                    st.session_state["sdo_reset"] += 1
+                    st.rerun()
+
+            if st.session_state.get("sdo_submitted", False):
+                st.success("Access request(s) submitted successfully. Refresh the page to submit again.")
+
+            if st.button("Display", key="sdo_display"):
+                display_df = conn.query("SELECT * FROM META_DATA_DB.TABLES_SCHEMA.ACCESS_REQUEST")
+                if not display_df.empty:
+                    st.dataframe(display_df, use_container_width=True)
+                else:
+                    st.info("No records found in ACCESS_REQUEST table.")
 else:
-    st.subheader("AI Users & Roles")
-    st.info("This section is under construction.")
+    mirrored_access_ai = st.radio("Mirrored access of existing user", ["Yes", "No"], index=None, horizontal=True, key="ai_mirrored")
+    if mirrored_access_ai == "Yes":
+        mirror_username_ai = st.text_input("Provide the username to be mirrored", key="ai_mirror_username")
+    elif mirrored_access_ai == "No":
+        tenants = sorted(df["TENANT"].unique())
+        selected_subtenant = None
+        selected_project = None
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            selected_tenant = st.selectbox("Tenants", tenants, key="ai_tenant")
+
+        filtered_by_tenant = df[df["TENANT"] == selected_tenant]
+        subtenants = sorted(filtered_by_tenant["SUBTENANT"].unique())
+        with col2:
+            selected_subtenant = st.selectbox("Subtenants", subtenants, key="ai_subtenant")
+
+        filtered_by_subtenant = filtered_by_tenant[filtered_by_tenant["SUBTENANT"] == selected_subtenant]
+        projects = sorted(filtered_by_subtenant["PROJECT"].unique())
+        with col3:
+            selected_project = st.selectbox("Projects", projects, key="ai_project")
+
+        import re
+        tenant_abbr = re.search(r'\[(.+?)\]', selected_tenant)
+        subtenant_abbr = re.search(r'\[(.+?)\]', selected_subtenant)
+        tenant_code = tenant_abbr.group(1) if tenant_abbr else selected_tenant
+        subtenant_code = subtenant_abbr.group(1) if subtenant_abbr else selected_subtenant
+
+        environments = [("Dev", "DEV"), ("SIT", "SIT"), ("ST", "ST"), ("UAT", "UAT"), ("PreProd", "PREPROD"), ("Prod", "PROD")]
+
+        st.subheader("Environments to which access is needed")
+        selected_envs = []
+        env_cols = st.columns(len(environments))
+        for idx, (env_label, env_code) in enumerate(environments):
+            with env_cols[idx]:
+                if st.checkbox(env_label, key=f"ai_env_{env_code}"):
+                    selected_envs.append((env_label, env_code))
+
+        if selected_envs:
+            env_names_str = "/".join([env_label for env_label, _ in selected_envs])
+
+            # Per-environment user and schema listing
+            for env_label, env_code in selected_envs:
+                st.markdown(f"---")
+                num_users = st.selectbox(f"Number of users needed access-[{env_label}]", list(range(1, 11)), key=f"ai_num_users_{env_code}")
+
+                # Show "All users need same access" only if more than 1 user selected
+                all_same_access = False
+                if num_users > 1:
+                    all_same_access = st.checkbox(f"All [{env_label}] Users need same access", key=f"ai_all_same_{env_code}")
+
+                db_name = f"{tenant_code}_{subtenant_code}_{selected_project}_{env_code}_DB"
+                try:
+                    schema_df = conn.query(f"SELECT SCHEMA_NAME FROM {db_name}.INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME != 'INFORMATION_SCHEMA' ORDER BY SCHEMA_NAME")
+                    if not schema_df.empty:
+                        schema_list = [f"{db_name}.{row['SCHEMA_NAME']}" for _, row in schema_df.iterrows()]
+                    else:
+                        schema_list = []
+                except Exception:
+                    schema_list = []
+
+                if all_same_access:
+                    # When "All users need same access" is checked: shared role checkboxes below
+                    rc1, rc2, rc3 = st.columns(3)
+                    with rc1:
+                        st.checkbox("Create Agent", key=f"ai_role_create_agent_{env_code}")
+                        st.checkbox("Cortex Services/Functions Cortex Copilot", key=f"ai_role_cortex_copilot_{env_code}")
+                        st.checkbox("Agent Usage", key=f"ai_role_agent_usage_{env_code}")
+                    with rc2:
+                        st.checkbox("Create Cortex Search Service", key=f"ai_role_cortex_search_{env_code}")
+                        st.checkbox("Copilot access", key=f"ai_role_copilot_access_{env_code}")
+                    with rc3:
+                        st.checkbox("Create Semantic View", key=f"ai_role_semantic_view_{env_code}")
+                        st.checkbox("Agent Monitoring", key=f"ai_role_agent_monitoring_{env_code}")
+
+                    # Shared schema list for all users in this environment
+                    if schema_list:
+                        st.write(f"**Schema List ({env_label})**")
+                        for schema in schema_list:
+                            st.checkbox(schema, key=f"ai_shared_schema_{env_code}_{schema}")
+
+                    for i in range(1, num_users + 1):
+                        st.text_input(f"User-{i} Email-[{env_label}]", key=f"ai_user_email_{env_code}_{i}")
+                else:
+                    # Per-user: checkboxes next to each user email
+                    for i in range(1, num_users + 1):
+                        st.text_input(f"User-{i} Email-[{env_label}]", key=f"ai_user_email_{env_code}_{i}")
+                        rc1, rc2, rc3 = st.columns(3)
+                        with rc1:
+                            st.checkbox("Create Agent", key=f"ai_role_create_agent_{env_code}_{i}")
+                            st.checkbox("Cortex Services/Functions Cortex Copilot", key=f"ai_role_cortex_copilot_{env_code}_{i}")
+                            st.checkbox("Agent Usage", key=f"ai_role_agent_usage_{env_code}_{i}")
+                        with rc2:
+                            st.checkbox("Create Cortex Search Service", key=f"ai_role_cortex_search_{env_code}_{i}")
+                            st.checkbox("Copilot access", key=f"ai_role_copilot_access_{env_code}_{i}")
+                        with rc3:
+                            st.checkbox("Create Semantic View", key=f"ai_role_semantic_view_{env_code}_{i}")
+                            st.checkbox("Agent Monitoring", key=f"ai_role_agent_monitoring_{env_code}_{i}")
+
+                        if schema_list:
+                            st.write(f"**Schema List ({env_label}) - User-{i}**")
+                            for schema in schema_list:
+                                st.checkbox(schema, key=f"ai_schema_{env_code}_{i}_{schema}")
