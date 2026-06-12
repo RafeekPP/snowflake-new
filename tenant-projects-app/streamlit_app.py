@@ -326,6 +326,7 @@ elif request_type == "Specific Database Object Access":
 
         sr = st.session_state["sdo_reset"]
         environments = [("Dev", "DEV"), ("SIT", "SIT"), ("ST", "ST"), ("UAT", "UAT"), ("PreProd", "PREPROD"), ("Prod", "PROD")]
+        selected_envs = []
 
         if access_mode == "All Users need same access":
             st.subheader("Environment to which access is needed")
@@ -500,12 +501,12 @@ elif request_type == "Specific Database Object Access":
                 # Validation
                 sdo_validation_errors = []
 
-                # Check at least one environment selected
-                if not selected_envs:
-                    sdo_validation_errors.append("At least one environment must be selected.")
-
                 # Check role is selected (for "All Users need same access" mode)
                 if access_mode == "All Users need same access":
+                    # Check at least one environment selected
+                    if not selected_envs:
+                        sdo_validation_errors.append("At least one environment must be selected.")
+
                     selected_role = st.session_state.get(f"sdo_role_select_{sr}", None)
                     if not selected_role:
                         sdo_validation_errors.append("Role must be selected.")
@@ -544,6 +545,14 @@ elif request_type == "Specific Database Object Access":
                         role = st.session_state.get(f"sdo_diff_role_{i}_{sr}", None)
                         if not role:
                             sdo_validation_errors.append(f"User-{i} Role must be selected.")
+                        # Check at least one environment selected per user
+                        user_has_env = False
+                        for _, ec in environments:
+                            if st.session_state.get(f"sdo_diff_env_{i}_{ec}_{sr}", False):
+                                user_has_env = True
+                                break
+                        if not user_has_env:
+                            sdo_validation_errors.append(f"User-{i}: At least one environment must be selected.")
 
                     # Check at least one object selected per checked object type per user
                     for i in range(1, num_users_diff + 1):
