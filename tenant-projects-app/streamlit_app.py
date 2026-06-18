@@ -1,3 +1,5 @@
+# Streamlit app for user access request management with tenant/project hierarchy
+# Co-authored with CoCo
 import os
 import streamlit as st
 
@@ -322,51 +324,48 @@ elif request_type == "Specific Database Object Access":
         if "selected_schemas_sdo" not in st.session_state or not isinstance(st.session_state.selected_schemas_sdo, dict):
             st.session_state.selected_schemas_sdo = {}
 
-        access_mode = st.radio("Access Mode", ["All Users need same access", "Users need different access"], index=None, horizontal=True, key=f"sdo_access_mode_{st.session_state['sdo_reset']}")
-
         sr = st.session_state["sdo_reset"]
         environments = [("Dev", "DEV"), ("SIT", "SIT"), ("ST", "ST"), ("UAT", "UAT"), ("PreProd", "PREPROD"), ("Prod", "PROD")]
-        selected_envs = []
+
+        num_users = st.selectbox("Number of users needed access", list(range(1, 11)), key=f"sdo_num_users_{sr}")
+
+        if num_users > 1:
+            access_mode = st.radio("Access Mode", ["All Users need same access", "Users need different access"], index=None, horizontal=True, key=f"sdo_access_mode_{sr}")
+        else:
+            access_mode = "All Users need same access"
 
         if access_mode == "All Users need same access":
-            st.subheader("Environment to which access is needed")
+            for i in range(1, num_users + 1):
+                st.text_input(f"User-{i} Email", key=f"sdo_user_email_{i}_{sr}")
 
-            selected_envs = []
+            st.radio("Role", ["Read", "Read/Write", "Read/Write/Create"], index=None, horizontal=True, key=f"sdo_role_{sr}")
+
+            st.subheader("Environment to which access is needed")
             env_cols = st.columns(len(environments))
+            selected_envs = []
             for idx, (env_label, env_code) in enumerate(environments):
                 with env_cols[idx]:
-                    env_checked = st.checkbox(env_label, key=f"sdo_env_{env_code}_{sr}")
-                if env_checked:
-                    selected_envs.append((env_label, env_code))
+                    if st.checkbox(env_label, key=f"sdo_env_{env_code}_{sr}"):
+                        selected_envs.append((env_label, env_code))
 
             if selected_envs:
-                role_combinations = ["Read", "Read/Write", "Read/Write/Create"]
-                selected_role = st.radio("Select role", role_combinations, index=None, horizontal=True, key=f"sdo_role_select_{sr}")
-                num_users = st.selectbox("Number of users needed access", list(range(1, 11)), key=f"sdo_num_users_{sr}")
-                for i in range(1, num_users + 1):
-                    st.text_input(f"User-{i} Email", key=f"sdo_user_email_{i}_{sr}")
-
                 st.subheader("Select Object Types")
-                obj_col1, obj_col2, obj_col3, obj_col4, obj_col5 = st.columns(5)
-                with obj_col1:
-                    obj_tables = st.checkbox("Tables", key=f"sdo_objtype_Tables_{sr}")
-                with obj_col2:
-                    obj_functions = st.checkbox("Functions", key=f"sdo_objtype_Functions_{sr}")
-                with obj_col3:
-                    obj_procedures = st.checkbox("Procedures", key=f"sdo_objtype_Procedures_{sr}")
-                with obj_col4:
-                    obj_views = st.checkbox("Views", key=f"sdo_objtype_Views_{sr}")
-                with obj_col5:
-                    obj_stages = st.checkbox("Stages", key=f"sdo_objtype_Stages_{sr}")
+                obj_row = st.columns(5)
+                with obj_row[0]:
+                    st.checkbox("Tables", key=f"sdo_objtype_Tables_{sr}")
+                with obj_row[1]:
+                    st.checkbox("Functions", key=f"sdo_objtype_Functions_{sr}")
+                with obj_row[2]:
+                    st.checkbox("Procedures", key=f"sdo_objtype_Procedures_{sr}")
+                with obj_row[3]:
+                    st.checkbox("Views", key=f"sdo_objtype_Views_{sr}")
+                with obj_row[4]:
+                    st.checkbox("Stages", key=f"sdo_objtype_Stages_{sr}")
 
-                obj_selections = {
-                    "Tables": obj_tables,
-                    "Functions": obj_functions,
-                    "Procedures": obj_procedures,
-                    "Views": obj_views,
-                    "Stages": obj_stages,
-                }
-                selected_obj_types = [ot for ot, oc in obj_selections.items() if oc]
+                selected_obj_types = []
+                for ot in ["Tables", "Functions", "Procedures", "Views", "Stages"]:
+                    if st.session_state.get(f"sdo_objtype_{ot}_{sr}", False):
+                        selected_obj_types.append(ot)
 
                 if selected_obj_types:
                     for env_label, env_code in selected_envs:
@@ -377,80 +376,79 @@ elif request_type == "Specific Database Object Access":
                                 schema_list = [f"{db_name}.{row['SCHEMA_NAME']}" for _, row in schema_df.iterrows()]
                             else:
                                 schema_list = []
-                                st.info(f"No schemas found in {db_name}")
-                        except Exception as e:
+                        except Exception:
                             schema_list = []
-                            st.warning(f"Could not fetch schemas from {db_name}: {e}")
 
                         if schema_list:
                             st.write(f"**Schema List ({env_label})**")
                             for schema in schema_list:
                                 schema_checked = st.checkbox(schema, key=f"sdo_schema_{env_code}_{schema}_{sr}")
                                 if schema_checked:
-                                    # Show objects indented to the right
-                                    _, obj_col = st.columns([0.5, 9.5])
-                                    with obj_col:
-                                        for obj_type in selected_obj_types:
-                                            if obj_type == "Tables":
-                                                query = f"SELECT TABLE_NAME FROM {schema.split('.')[0]}.INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{schema.split('.')[1]}' AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME"
-                                            elif obj_type == "Views":
-                                                query = f"SELECT TABLE_NAME FROM {schema.split('.')[0]}.INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{schema.split('.')[1]}' AND TABLE_TYPE = 'VIEW' ORDER BY TABLE_NAME"
-                                            elif obj_type == "Functions":
-                                                query = f"SELECT FUNCTION_NAME FROM {schema.split('.')[0]}.INFORMATION_SCHEMA.FUNCTIONS WHERE FUNCTION_SCHEMA = '{schema.split('.')[1]}' ORDER BY FUNCTION_NAME"
-                                            elif obj_type == "Procedures":
-                                                query = f"SELECT PROCEDURE_NAME FROM {schema.split('.')[0]}.INFORMATION_SCHEMA.PROCEDURES WHERE PROCEDURE_SCHEMA = '{schema.split('.')[1]}' ORDER BY PROCEDURE_NAME"
-                                            elif obj_type == "Stages":
-                                                query = f"SHOW STAGES IN {schema}"
+                                    db_part = schema.split('.')[0]
+                                    schema_part = schema.split('.')[1]
+                                    for obj_type in selected_obj_types:
+                                        if obj_type == "Tables":
+                                            query = f"SELECT TABLE_NAME FROM {db_part}.INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{schema_part}' AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME"
+                                        elif obj_type == "Views":
+                                            query = f"SELECT TABLE_NAME FROM {db_part}.INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{schema_part}' AND TABLE_TYPE = 'VIEW' ORDER BY TABLE_NAME"
+                                        elif obj_type == "Functions":
+                                            query = f"SELECT FUNCTION_NAME FROM {db_part}.INFORMATION_SCHEMA.FUNCTIONS WHERE FUNCTION_SCHEMA = '{schema_part}' ORDER BY FUNCTION_NAME"
+                                        elif obj_type == "Procedures":
+                                            query = f"SELECT PROCEDURE_NAME FROM {db_part}.INFORMATION_SCHEMA.PROCEDURES WHERE PROCEDURE_SCHEMA = '{schema_part}' ORDER BY PROCEDURE_NAME"
+                                        elif obj_type == "Stages":
+                                            query = f"SHOW STAGES IN {schema}"
 
-                                            try:
-                                                if obj_type == "Stages":
-                                                    obj_df = conn.query(query)
-                                                    obj_names = obj_df["name"].tolist() if not obj_df.empty else []
-                                                else:
-                                                    obj_df = conn.query(query)
-                                                    obj_names = obj_df.iloc[:, 0].tolist() if not obj_df.empty else []
-                                            except Exception:
-                                                obj_names = []
+                                        try:
+                                            if obj_type == "Stages":
+                                                obj_df = conn.query(query)
+                                                obj_names = obj_df["name"].tolist() if not obj_df.empty else []
+                                            else:
+                                                obj_df = conn.query(query)
+                                                obj_names = obj_df.iloc[:, 0].tolist() if not obj_df.empty else []
+                                        except Exception as e:
+                                            obj_names = []
+                                            st.warning(f"Could not fetch {obj_type.lower()} from {schema}: {e}")
 
-                                            if obj_names:
-                                                st.write(f"*{obj_type} in {schema}:*")
-                                                for obj_name in obj_names:
-                                                    st.checkbox(obj_name, key=f"sdo_obj_{env_code}_{schema}_{obj_type}_{obj_name}_{sr}")
+                                        if obj_names:
+                                            st.write(f"*{obj_type} in {schema}:*")
+                                            for obj_name in obj_names:
+                                                st.checkbox(f"  {obj_name}", key=f"sdo_obj_{env_code}_{schema}_{obj_type}_{obj_name}_{sr}")
+
         elif access_mode == "Users need different access":
-            num_users_diff = st.selectbox("Number of users needed access", list(range(1, 11)), key=f"sdo_diff_num_users_{sr}")
+            for i in range(1, num_users + 1):
+                st.markdown(f"---")
+                st.text_input(f"User-{i} Email", key=f"sdo_user_email_{i}_{sr}")
 
-            for i in range(1, num_users_diff + 1):
-                col_email, col_role = st.columns([2, 3])
-                with col_email:
-                    st.text_input(f"User-{i} Email", key=f"sdo_diff_user_email_{i}_{sr}")
-                with col_role:
-                    st.radio("Role", ["Read", "Read/Write", "Read/Write/Create"], index=None, horizontal=True, key=f"sdo_diff_role_{i}_{sr}")
                 env_cols = st.columns(len(environments))
                 user_selected_envs = []
                 for idx, (env_label, env_code) in enumerate(environments):
                     with env_cols[idx]:
-                        if st.checkbox(env_label, key=f"sdo_diff_env_{i}_{env_code}_{sr}"):
+                        if st.checkbox(env_label, key=f"sdo_env_{i}_{env_code}_{sr}"):
                             user_selected_envs.append((env_label, env_code))
 
                 for env_label, env_code in user_selected_envs:
-                    st.write(f"**{env_label}-Objects-User{i}**")
-                    obj_row = st.columns(5)
-                    obj_selections = {}
-                    with obj_row[0]:
-                        obj_selections["Tables"] = st.checkbox("Tables", key=f"sdo_diff_objtype_{i}_{env_code}_Tables_{sr}")
-                    with obj_row[1]:
-                        obj_selections["Functions"] = st.checkbox("Functions", key=f"sdo_diff_objtype_{i}_{env_code}_Functions_{sr}")
-                    with obj_row[2]:
-                        obj_selections["Procedures"] = st.checkbox("Procedures", key=f"sdo_diff_objtype_{i}_{env_code}_Procedures_{sr}")
-                    with obj_row[3]:
-                        obj_selections["Views"] = st.checkbox("Views", key=f"sdo_diff_objtype_{i}_{env_code}_Views_{sr}")
-                    with obj_row[4]:
-                        obj_selections["Stages"] = st.checkbox("Stages", key=f"sdo_diff_objtype_{i}_{env_code}_Stages_{sr}")
+                    role_options = [f"Read-{env_label}", f"Read/Write-{env_label}", f"Read/Write/Create-{env_label}"]
+                    st.radio(f"Role ({env_label}) - User{i} :", role_options, index=None, horizontal=True, key=f"sdo_role_{i}_{env_code}_{sr}")
 
-                    db_name = f"{tenant_code}_{subtenant_code}_{selected_project}_{env_code}_DB"
-                    selected_obj_types = [ot for ot, oc in obj_selections.items() if oc]
+                    obj_row = st.columns(5)
+                    with obj_row[0]:
+                        st.checkbox("Tables", key=f"sdo_objtype_{i}_{env_code}_Tables_{sr}")
+                    with obj_row[1]:
+                        st.checkbox("Functions", key=f"sdo_objtype_{i}_{env_code}_Functions_{sr}")
+                    with obj_row[2]:
+                        st.checkbox("Procedures", key=f"sdo_objtype_{i}_{env_code}_Procedures_{sr}")
+                    with obj_row[3]:
+                        st.checkbox("Views", key=f"sdo_objtype_{i}_{env_code}_Views_{sr}")
+                    with obj_row[4]:
+                        st.checkbox("Stages", key=f"sdo_objtype_{i}_{env_code}_Stages_{sr}")
+
+                    selected_obj_types = []
+                    for ot in ["Tables", "Functions", "Procedures", "Views", "Stages"]:
+                        if st.session_state.get(f"sdo_objtype_{i}_{env_code}_{ot}_{sr}", False):
+                            selected_obj_types.append(ot)
 
                     if selected_obj_types:
+                        db_name = f"{tenant_code}_{subtenant_code}_{selected_project}_{env_code}_DB"
                         try:
                             schema_df = conn.query(f"SELECT SCHEMA_NAME FROM {db_name}.INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME != 'INFORMATION_SCHEMA' ORDER BY SCHEMA_NAME")
                             if not schema_df.empty:
@@ -461,116 +459,57 @@ elif request_type == "Specific Database Object Access":
                             schema_list = []
 
                         if schema_list:
-                            st.write("**Schema List**")
+                            st.write(f"**Schema List ({env_label})**")
                             for schema in schema_list:
-                                schema_checked = st.checkbox(schema, key=f"sdo_diff_schema_{i}_{env_code}_{schema}_{sr}")
+                                schema_checked = st.checkbox(schema, key=f"sdo_schema_{i}_{env_code}_{schema}_{sr}")
                                 if schema_checked:
-                                    # Show objects indented to the right
-                                    _, obj_col = st.columns([0.5, 9.5])
-                                    with obj_col:
-                                        for obj_type in selected_obj_types:
-                                            if obj_type == "Tables":
-                                                query = f"SELECT TABLE_NAME FROM {schema.split('.')[0]}.INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{schema.split('.')[1]}' AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME"
-                                            elif obj_type == "Views":
-                                                query = f"SELECT TABLE_NAME FROM {schema.split('.')[0]}.INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{schema.split('.')[1]}' AND TABLE_TYPE = 'VIEW' ORDER BY TABLE_NAME"
-                                            elif obj_type == "Functions":
-                                                query = f"SELECT FUNCTION_NAME FROM {schema.split('.')[0]}.INFORMATION_SCHEMA.FUNCTIONS WHERE FUNCTION_SCHEMA = '{schema.split('.')[1]}' ORDER BY FUNCTION_NAME"
-                                            elif obj_type == "Procedures":
-                                                query = f"SELECT PROCEDURE_NAME FROM {schema.split('.')[0]}.INFORMATION_SCHEMA.PROCEDURES WHERE PROCEDURE_SCHEMA = '{schema.split('.')[1]}' ORDER BY PROCEDURE_NAME"
-                                            elif obj_type == "Stages":
-                                                query = f"SHOW STAGES IN {schema}"
+                                    db_part = schema.split('.')[0]
+                                    schema_part = schema.split('.')[1]
+                                    for obj_type in selected_obj_types:
+                                        if obj_type == "Tables":
+                                            query = f"SELECT TABLE_NAME FROM {db_part}.INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{schema_part}' AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME"
+                                        elif obj_type == "Views":
+                                            query = f"SELECT TABLE_NAME FROM {db_part}.INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{schema_part}' AND TABLE_TYPE = 'VIEW' ORDER BY TABLE_NAME"
+                                        elif obj_type == "Functions":
+                                            query = f"SELECT FUNCTION_NAME FROM {db_part}.INFORMATION_SCHEMA.FUNCTIONS WHERE FUNCTION_SCHEMA = '{schema_part}' ORDER BY FUNCTION_NAME"
+                                        elif obj_type == "Procedures":
+                                            query = f"SELECT PROCEDURE_NAME FROM {db_part}.INFORMATION_SCHEMA.PROCEDURES WHERE PROCEDURE_SCHEMA = '{schema_part}' ORDER BY PROCEDURE_NAME"
+                                        elif obj_type == "Stages":
+                                            query = f"SHOW STAGES IN {schema}"
 
-                                            try:
-                                                if obj_type == "Stages":
-                                                    obj_df = conn.query(query)
-                                                    obj_names = obj_df["name"].tolist() if not obj_df.empty else []
-                                                else:
-                                                    obj_df = conn.query(query)
-                                                    obj_names = obj_df.iloc[:, 0].tolist() if not obj_df.empty else []
-                                            except Exception:
-                                                obj_names = []
+                                        try:
+                                            if obj_type == "Stages":
+                                                obj_df = conn.query(query)
+                                                obj_names = obj_df["name"].tolist() if not obj_df.empty else []
+                                            else:
+                                                obj_df = conn.query(query)
+                                                obj_names = obj_df.iloc[:, 0].tolist() if not obj_df.empty else []
+                                        except Exception as e:
+                                            obj_names = []
+                                            st.warning(f"Could not fetch {obj_type.lower()} from {schema}: {e}")
 
-                                            if obj_names:
-                                                st.write(f"*{obj_type} in {schema}:*")
-                                                for obj_name in obj_names:
-                                                    st.checkbox(obj_name, key=f"sdo_diff_obj_{i}_{env_code}_{schema}_{obj_type}_{obj_name}_{sr}")
+                                        if obj_names:
+                                            st.write(f"*{obj_type} in {schema}:*")
+                                            for obj_name in obj_names:
+                                                st.checkbox(f"  {obj_name}", key=f"sdo_obj_{i}_{env_code}_{schema}_{obj_type}_{obj_name}_{sr}")
 
         # Submit and Display buttons for Specific Database Object Access
         if access_mode is not None:
             if st.button("Submit", key="sdo_submit"):
-                # Validation
                 sdo_validation_errors = []
+                num_users = st.session_state.get(f"sdo_num_users_{sr}", 1)
+                access_mode = st.session_state.get(f"sdo_access_mode_{sr}", "All Users need same access") if num_users > 1 else "All Users need same access"
 
-                # Check role is selected (for "All Users need same access" mode)
                 if access_mode == "All Users need same access":
-                    # Check at least one environment selected
-                    if not selected_envs:
-                        sdo_validation_errors.append("At least one environment must be selected.")
-
-                    selected_role = st.session_state.get(f"sdo_role_select_{sr}", None)
-                    if not selected_role:
-                        sdo_validation_errors.append("Role must be selected.")
-
-                    # Check user emails filled
-                    num_users = st.session_state.get(f"sdo_num_users_{sr}", 1)
-                    for i in range(1, num_users + 1):
-                        email = st.session_state.get(f"sdo_user_email_{i}_{sr}", "")
+                    for ui in range(1, num_users + 1):
+                        email = st.session_state.get(f"sdo_user_email_{ui}_{sr}", "")
                         if not email:
-                            sdo_validation_errors.append(f"User-{i} Email is empty.")
-
-                    # Check at least one object selected per checked object type
-                    checked_obj_types = []
-                    for ot in ["Tables", "Functions", "Procedures", "Views", "Stages"]:
-                        if st.session_state.get(f"sdo_objtype_{ot}_{sr}", False):
-                            checked_obj_types.append(ot)
-
-                    if not checked_obj_types:
-                        sdo_validation_errors.append("At least one object type must be selected.")
-                    else:
-                        for ot in checked_obj_types:
-                            has_obj_for_type = False
-                            for key, val in st.session_state.items():
-                                if key.startswith("sdo_obj_") and f"_{ot}_" in key and key.endswith(f"_{sr}") and val is True:
-                                    has_obj_for_type = True
-                                    break
-                            if not has_obj_for_type:
-                                sdo_validation_errors.append(f"At least one {ot.lower()} must be selected.")
+                            sdo_validation_errors.append(f"User-{ui} Email is empty.")
                 else:
-                    # Users need different access
-                    num_users_diff = st.session_state.get(f"sdo_diff_num_users_{sr}", 1)
-                    for i in range(1, num_users_diff + 1):
-                        email = st.session_state.get(f"sdo_diff_user_email_{i}_{sr}", "")
+                    for ui in range(1, num_users + 1):
+                        email = st.session_state.get(f"sdo_user_email_{ui}_{sr}", "")
                         if not email:
-                            sdo_validation_errors.append(f"User-{i} Email is empty.")
-                        role = st.session_state.get(f"sdo_diff_role_{i}_{sr}", None)
-                        if not role:
-                            sdo_validation_errors.append(f"User-{i} Role must be selected.")
-                        # Check at least one environment selected per user
-                        user_has_env = False
-                        for _, ec in environments:
-                            if st.session_state.get(f"sdo_diff_env_{i}_{ec}_{sr}", False):
-                                user_has_env = True
-                                break
-                        if not user_has_env:
-                            sdo_validation_errors.append(f"User-{i}: At least one environment must be selected.")
-
-                    # Check at least one object selected per checked object type per user
-                    for i in range(1, num_users_diff + 1):
-                        for ot in ["Tables", "Functions", "Procedures", "Views", "Stages"]:
-                            # Check if this object type is checked for any env for this user
-                            ot_checked = False
-                            for _, ec in environments:
-                                if st.session_state.get(f"sdo_diff_objtype_{i}_{ec}_{ot}_{sr}", False):
-                                    ot_checked = True
-                                    break
-                            if ot_checked:
-                                has_obj_for_type = False
-                                for key, val in st.session_state.items():
-                                    if key.startswith(f"sdo_diff_obj_{i}_") and f"_{ot}_" in key and key.endswith(f"_{sr}") and val is True:
-                                        has_obj_for_type = True
-                                        break
-                                if not has_obj_for_type:
-                                    sdo_validation_errors.append(f"User-{i}: At least one {ot.lower()} must be selected.")
+                            sdo_validation_errors.append(f"User-{ui} Email is empty.")
 
                 if sdo_validation_errors:
                     st.error("Please enter all details")
@@ -578,89 +517,19 @@ elif request_type == "Specific Database Object Access":
                     t_val = selected_tenant
                     s_val = selected_subtenant
                     p_val = selected_project
-
                     rows_to_insert = []
 
                     if access_mode == "All Users need same access":
-                        # Collect user emails
-                        num_users = st.session_state.get(f"sdo_num_users_{sr}", 1)
-                        user_emails = []
-                        for i in range(1, num_users + 1):
-                            email = st.session_state.get(f"sdo_user_email_{i}_{sr}", "")
-                            if email:
-                                user_emails.append(email)
-
-                        selected_role = st.session_state.get(f"sdo_role_select_{sr}", "Read")
-
-                        # Collect checked objects from checkbox keys: sdo_obj_{env_code}_{schema}_{obj_type}_{obj_name}_{sr}
-                        for key, val in st.session_state.items():
-                            if key.startswith("sdo_obj_") and key.endswith(f"_{sr}") and val is True:
-                                # Parse: sdo_obj_{env_code}_{schema}_{obj_type}_{obj_name}_{sr}
-                                parts = key[len("sdo_obj_"):]  # remove prefix
-                                parts = parts[:-(len(str(sr)) + 1)]  # remove trailing _{sr}
-                                # Find env_code (first segment before _)
-                                # Format: {env_code}_{db_name}.{schema_name}_{obj_type}_{obj_name}
-                                # env_code is one of DEV, SIT, ST, UAT, PREPROD, PROD
-                                env_code_found = None
-                                for _, ec in environments:
-                                    if parts.startswith(f"{ec}_"):
-                                        env_code_found = ec
-                                        break
-                                if not env_code_found:
-                                    continue
-                                remainder = parts[len(env_code_found) + 1:]
-                                # remainder: {db_name}.{schema_name}_{obj_type}_{obj_name}
-                                # obj_name is last segment, obj_type is second-to-last
-                                # But obj_name and schema can contain underscores, so we need a different approach
-                                # Schema format is DB_NAME.SCHEMA_NAME which contains a dot
-                                # Split on the dot to find the schema boundary
-                                dot_idx = remainder.find(".")
-                                if dot_idx < 0:
-                                    continue
-                                # Find next underscore after the dot to get schema end
-                                after_dot = remainder[dot_idx + 1:]
-                                # after_dot: SCHEMA_NAME_{obj_type}_{obj_name}
-                                # We know obj_types: Tables, Views, Functions, Procedures, Stages
-                                obj_type_found = None
-                                schema_end_idx = None
-                                for ot in ["Tables", "Views", "Functions", "Procedures", "Stages"]:
-                                    marker = f"_{ot}_"
-                                    pos = after_dot.find(marker)
-                                    if pos >= 0:
-                                        obj_type_found = ot
-                                        schema_end_idx = dot_idx + 1 + pos
-                                        obj_name = after_dot[pos + len(marker):]
-                                        break
-                                if not obj_type_found:
-                                    continue
-                                schema_name = remainder[:schema_end_idx]
-                                full_schema = f"{remainder[:dot_idx]}.{after_dot[:after_dot.find(f'_{obj_type_found}_')]}"
-
-                                # Map env_code to label
-                                env_label = env_code_found
-                                for el, ec in environments:
-                                    if ec == env_code_found:
-                                        env_label = el
-                                        break
-
-                                for user_email in user_emails:
-                                    rows_to_insert.append((user_email, selected_role, env_label, full_schema, obj_type_found.lower(), obj_name))
-                    else:
-                        # Users need different access
-                        num_users_diff = st.session_state.get(f"sdo_diff_num_users_{sr}", 1)
-                        for i in range(1, num_users_diff + 1):
-                            user_email = st.session_state.get(f"sdo_diff_user_email_{i}_{sr}", "")
-                            user_role = st.session_state.get(f"sdo_diff_role_{i}_{sr}", "Read")
+                        shared_role = st.session_state.get(f"sdo_role_{sr}", "Read")
+                        for ui in range(1, num_users + 1):
+                            user_email = st.session_state.get(f"sdo_user_email_{ui}_{sr}", "")
                             if not user_email:
                                 continue
-
-                            # Collect checked objects: sdo_diff_obj_{i}_{env_code}_{schema}_{obj_type}_{obj_name}_{sr}
-                            prefix = f"sdo_diff_obj_{i}_"
+                            # Collect checked objects (shared): sdo_obj_{env_code}_{schema}_{obj_type}_{obj_name}_{sr}
                             for key, val in st.session_state.items():
-                                if key.startswith(prefix) and key.endswith(f"_{sr}") and val is True:
-                                    parts = key[len(prefix):]
-                                    parts = parts[:-(len(str(sr)) + 1)]  # remove trailing _{sr}
-                                    # Find env_code
+                                if key.startswith("sdo_obj_") and key.endswith(f"_{sr}") and val is True:
+                                    parts = key[len("sdo_obj_"):]
+                                    parts = parts[:-(len(str(sr)) + 1)]
                                     env_code_found = None
                                     for _, ec in environments:
                                         if parts.startswith(f"{ec}_"):
@@ -684,18 +553,56 @@ elif request_type == "Specific Database Object Access":
                                     if not obj_type_found:
                                         continue
                                     full_schema = f"{remainder[:dot_idx]}.{after_dot[:after_dot.find(f'_{obj_type_found}_')]}"
-
-                                    # Map env_code to label
-                                    env_label = env_code_found
+                                    env_label_found = env_code_found
                                     for el, ec in environments:
                                         if ec == env_code_found:
-                                            env_label = el
+                                            env_label_found = el
                                             break
-
-                                    rows_to_insert.append((user_email, user_role, env_label, full_schema, obj_type_found.lower(), obj_name))
+                                    rows_to_insert.append((user_email, shared_role, env_label_found, full_schema, obj_type_found.lower(), obj_name))
+                    else:
+                        # Users need different access
+                        for ui in range(1, num_users + 1):
+                            user_email = st.session_state.get(f"sdo_user_email_{ui}_{sr}", "")
+                            if not user_email:
+                                continue
+                            prefix = f"sdo_obj_{ui}_"
+                            for key, val in st.session_state.items():
+                                if key.startswith(prefix) and key.endswith(f"_{sr}") and val is True:
+                                    parts = key[len(prefix):]
+                                    parts = parts[:-(len(str(sr)) + 1)]
+                                    env_code_found = None
+                                    for _, ec in environments:
+                                        if parts.startswith(f"{ec}_"):
+                                            env_code_found = ec
+                                            break
+                                    if not env_code_found:
+                                        continue
+                                    remainder = parts[len(env_code_found) + 1:]
+                                    dot_idx = remainder.find(".")
+                                    if dot_idx < 0:
+                                        continue
+                                    after_dot = remainder[dot_idx + 1:]
+                                    obj_type_found = None
+                                    for ot in ["Tables", "Views", "Functions", "Procedures", "Stages"]:
+                                        marker = f"_{ot}_"
+                                        pos = after_dot.find(marker)
+                                        if pos >= 0:
+                                            obj_type_found = ot
+                                            obj_name = after_dot[pos + len(marker):]
+                                            break
+                                    if not obj_type_found:
+                                        continue
+                                    full_schema = f"{remainder[:dot_idx]}.{after_dot[:after_dot.find(f'_{obj_type_found}_')]}"
+                                    env_label_found = env_code_found
+                                    for el, ec in environments:
+                                        if ec == env_code_found:
+                                            env_label_found = el
+                                            break
+                                    # Get role for this user + environment
+                                    env_role = st.session_state.get(f"sdo_role_{ui}_{env_code_found}_{sr}", "")
+                                    rows_to_insert.append((user_email, env_role, env_label_found, full_schema, obj_type_found.lower(), obj_name))
 
                     if rows_to_insert:
-                        insert_count = 0
                         session = conn.session()
                         for user_email, role_type, env_label, schema_name, obj_type, obj_name in rows_to_insert:
                             session.sql(
@@ -703,7 +610,6 @@ elif request_type == "Specific Database Object Access":
                                     (TENANT, SUBTENANT, PROJECT, REQUEST_TYPE, "USER", ENVIRONMENT, SCHEMA, OBJECTS, OBJECT_NAMES)
                                     VALUES ('{t_val}', '{s_val}', '{p_val}', '{role_type}', '{user_email}', '{env_label}', '{schema_name}', '{obj_type}', '{obj_name}')"""
                             ).collect()
-                            insert_count += 1
                         st.session_state["show_success"] = True
                         st.session_state["sdo_reset"] += 1
                         st.rerun()
@@ -743,118 +649,282 @@ else:
         tenant_code = tenant_abbr.group(1) if tenant_abbr else selected_tenant
         subtenant_code = subtenant_abbr.group(1) if subtenant_abbr else selected_subtenant
 
+        if "ai_reset" not in st.session_state:
+            st.session_state["ai_reset"] = 0
+        ai_sr = st.session_state["ai_reset"]
+
         environments = [("Dev", "DEV"), ("SIT", "SIT"), ("ST", "ST"), ("UAT", "UAT"), ("PreProd", "PREPROD"), ("Prod", "PROD")]
 
-        st.subheader("Environments to which access is needed")
+        st.subheader("Environment to which access is needed")
         selected_envs = []
         env_cols = st.columns(len(environments))
         for idx, (env_label, env_code) in enumerate(environments):
             with env_cols[idx]:
-                if st.checkbox(env_label, key=f"ai_env_{env_code}"):
+                if st.checkbox(env_label, key=f"ai_env_{env_code}_{ai_sr}"):
                     selected_envs.append((env_label, env_code))
 
         if selected_envs:
-            env_names_str = "/".join([env_label for env_label, _ in selected_envs])
+            num_users = st.selectbox("Number of users needed access", list(range(1, 11)), key=f"ai_num_users_{ai_sr}")
 
-            # Per-environment user and schema listing
-            for env_label, env_code in selected_envs:
-                st.markdown(f"---")
-                num_users = st.selectbox(f"Number of users needed access-[{env_label}]", list(range(1, 11)), key=f"ai_num_users_{env_code}")
+            if num_users > 1:
+                access_mode_ai = st.radio("Access Mode", ["All Users need same access", "Users need different access"], index=None, horizontal=True, key=f"ai_access_mode_{ai_sr}")
+            else:
+                access_mode_ai = "All Users need same access"
 
-                # Show "All users need same access" only if more than 1 user selected
-                all_same_access = False
-                if num_users > 1:
-                    all_same_access = st.checkbox(f"All [{env_label}] Users need same access", key=f"ai_all_same_{env_code}")
+            if access_mode_ai == "All Users need same access":
+                for i in range(1, num_users + 1):
+                    st.text_input(f"User-{i} Email", key=f"ai_user_email_{i}_{ai_sr}")
 
-                db_name = f"{tenant_code}_{subtenant_code}_{selected_project}_{env_code}_DB"
-                try:
-                    schema_df = conn.query(f"SELECT SCHEMA_NAME FROM {db_name}.INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME != 'INFORMATION_SCHEMA' ORDER BY SCHEMA_NAME")
-                    if not schema_df.empty:
-                        schema_list = [f"{db_name}.{row['SCHEMA_NAME']}" for _, row in schema_df.iterrows()]
-                    else:
-                        schema_list = []
-                except Exception:
-                    schema_list = []
+                st.subheader("Select AI Roles")
+                rc1, rc2, rc3 = st.columns(3)
+                with rc1:
+                    st.checkbox("Create Agent", key=f"ai_role_create_agent_{ai_sr}")
+                    st.checkbox("Cortex Services/Functions", key=f"ai_role_cortex_services_{ai_sr}")
+                    st.checkbox("Agent Usage", key=f"ai_role_agent_usage_{ai_sr}")
+                with rc2:
+                    st.checkbox("Create Cortex Search Service", key=f"ai_role_cortex_search_{ai_sr}")
+                    st.checkbox("Copilot access", key=f"ai_role_copilot_access_{ai_sr}")
+                with rc3:
+                    st.checkbox("Create Semantic View", key=f"ai_role_semantic_view_{ai_sr}")
+                    st.checkbox("Agent Monitoring", key=f"ai_role_agent_monitoring_{ai_sr}")
 
-                if all_same_access:
-                    # When "All users need same access" is checked: shared role checkboxes below
-                    rc1, rc2, rc3 = st.columns(3)
-                    with rc1:
-                        st.checkbox("Create Agent", key=f"ai_role_create_agent_{env_code}")
-                        st.checkbox("Cortex Services/Functions Cortex Copilot", key=f"ai_role_cortex_copilot_{env_code}")
-                        agent_usage_checked = st.checkbox("Agent Usage", key=f"ai_role_agent_usage_{env_code}")
-                    with rc2:
-                        st.checkbox("Create Cortex Search Service", key=f"ai_role_cortex_search_{env_code}")
-                        st.checkbox("Copilot access", key=f"ai_role_copilot_access_{env_code}")
-                    with rc3:
-                        st.checkbox("Create Semantic View", key=f"ai_role_semantic_view_{env_code}")
-                        agent_monitoring_checked = st.checkbox("Agent Monitoring", key=f"ai_role_agent_monitoring_{env_code}")
+                # Read selected AI roles from session_state
+                selected_ai_roles = []
+                for role_name, role_key in [
+                    ("Create Agent", f"ai_role_create_agent_{ai_sr}"),
+                    ("Cortex Services/Functions", f"ai_role_cortex_services_{ai_sr}"),
+                    ("Agent Usage", f"ai_role_agent_usage_{ai_sr}"),
+                    ("Create Cortex Search Service", f"ai_role_cortex_search_{ai_sr}"),
+                    ("Copilot access", f"ai_role_copilot_access_{ai_sr}"),
+                    ("Create Semantic View", f"ai_role_semantic_view_{ai_sr}"),
+                    ("Agent Monitoring", f"ai_role_agent_monitoring_{ai_sr}"),
+                ]:
+                    if st.session_state.get(role_key, False):
+                        selected_ai_roles.append(role_name)
 
-                    # Shared schema list for all users in this environment
-                    if schema_list:
-                        st.write(f"**Schema List ({env_label})**")
-                        for schema in schema_list:
-                            st.checkbox(schema, key=f"ai_shared_schema_{env_code}_{schema}")
+                # Show schemas only if non-Copilot roles are checked
+                schema_roles = [r for r in selected_ai_roles if r != "Copilot access"]
 
-                    # Show agents in schema if Agent Usage or Agent Monitoring is checked
-                    if (agent_usage_checked or agent_monitoring_checked) and schema_list:
-                        for schema in schema_list:
-                            schema_parts = schema.split(".")
-                            try:
-                                agents_df = conn.query(f"SHOW CORTEX SEARCH SERVICES IN {schema}")
-                                if agents_df.empty:
-                                    agents_df = conn.query(f"SHOW SNOWFLAKE.ML.ANOMALY_DETECTION IN {schema}")
-                            except Exception:
-                                agents_df = None
-                            try:
-                                agent_list_df = conn.query(f"SELECT AGENT_NAME FROM {schema_parts[0]}.INFORMATION_SCHEMA.CORTEX_AGENTS WHERE AGENT_SCHEMA = '{schema_parts[1]}' ORDER BY AGENT_NAME")
-                            except Exception:
-                                try:
-                                    agent_list_df = conn.query(f"SHOW CORTEX AGENTS IN {schema}")
-                                except Exception:
-                                    agent_list_df = None
-                            if agent_list_df is not None and not agent_list_df.empty:
-                                st.write(f"**Agents in {schema}**")
-                                agent_names = agent_list_df.iloc[:, 0].tolist() if not agent_list_df.empty else []
-                                for agent_name in agent_names:
-                                    st.checkbox(agent_name, key=f"ai_agent_{env_code}_{schema}_{agent_name}")
-
-                    for i in range(1, num_users + 1):
-                        st.text_input(f"User-{i} Email-[{env_label}]", key=f"ai_user_email_{env_code}_{i}")
-                else:
-                    # Per-user: checkboxes next to each user email
-                    for i in range(1, num_users + 1):
-                        st.text_input(f"User-{i} Email-[{env_label}]", key=f"ai_user_email_{env_code}_{i}")
-                        rc1, rc2, rc3 = st.columns(3)
-                        with rc1:
-                            st.checkbox("Create Agent", key=f"ai_role_create_agent_{env_code}_{i}")
-                            st.checkbox("Cortex Services/Functions Cortex Copilot", key=f"ai_role_cortex_copilot_{env_code}_{i}")
-                            agent_usage_checked_i = st.checkbox("Agent Usage", key=f"ai_role_agent_usage_{env_code}_{i}")
-                        with rc2:
-                            st.checkbox("Create Cortex Search Service", key=f"ai_role_cortex_search_{env_code}_{i}")
-                            st.checkbox("Copilot access", key=f"ai_role_copilot_access_{env_code}_{i}")
-                        with rc3:
-                            st.checkbox("Create Semantic View", key=f"ai_role_semantic_view_{env_code}_{i}")
-                            agent_monitoring_checked_i = st.checkbox("Agent Monitoring", key=f"ai_role_agent_monitoring_{env_code}_{i}")
+                if schema_roles:
+                    for env_label, env_code in selected_envs:
+                        db_name = f"{tenant_code}_{subtenant_code}_{selected_project}_{env_code}_DB"
+                        try:
+                            schema_df = conn.query(f"SELECT SCHEMA_NAME FROM {db_name}.INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME != 'INFORMATION_SCHEMA' ORDER BY SCHEMA_NAME")
+                            if not schema_df.empty:
+                                schema_list = [f"{db_name}.{row['SCHEMA_NAME']}" for _, row in schema_df.iterrows()]
+                            else:
+                                schema_list = []
+                                st.info(f"No schemas found in {db_name}")
+                        except Exception as e:
+                            schema_list = []
+                            st.warning(f"Could not fetch schemas from {db_name}: {e}")
 
                         if schema_list:
-                            st.write(f"**Schema List ({env_label}) - User-{i}**")
+                            st.write(f"**Schema List ({env_label})**")
                             for schema in schema_list:
-                                st.checkbox(schema, key=f"ai_schema_{env_code}_{i}_{schema}")
+                                st.checkbox(schema, key=f"ai_schema_{env_code}_{schema}_{ai_sr}")
 
-                        # Show agents in schema if Agent Usage or Agent Monitoring is checked for this user
-                        if (agent_usage_checked_i or agent_monitoring_checked_i) and schema_list:
-                            for schema in schema_list:
-                                schema_parts = schema.split(".")
-                                try:
-                                    agent_list_df = conn.query(f"SELECT AGENT_NAME FROM {schema_parts[0]}.INFORMATION_SCHEMA.CORTEX_AGENTS WHERE AGENT_SCHEMA = '{schema_parts[1]}' ORDER BY AGENT_NAME")
-                                except Exception:
-                                    try:
-                                        agent_list_df = conn.query(f"SHOW CORTEX AGENTS IN {schema}")
-                                    except Exception:
-                                        agent_list_df = None
-                                if agent_list_df is not None and not agent_list_df.empty:
-                                    st.write(f"**Agents in {schema} - User-{i}**")
-                                    agent_names = agent_list_df.iloc[:, 0].tolist() if not agent_list_df.empty else []
-                                    for agent_name in agent_names:
-                                        st.checkbox(agent_name, key=f"ai_agent_{env_code}_{i}_{schema}_{agent_name}")
+            elif access_mode_ai == "Users need different access":
+                for i in range(1, num_users + 1):
+                    col_email, col_role = st.columns([2, 3])
+                    with col_email:
+                        st.text_input(f"User-{i} Email", key=f"ai_diff_user_email_{i}_{ai_sr}")
+
+                    env_cols = st.columns(len(environments))
+                    user_selected_envs = []
+                    for idx, (env_label, env_code) in enumerate(environments):
+                        with env_cols[idx]:
+                            if st.checkbox(env_label, key=f"ai_diff_env_{i}_{env_code}_{ai_sr}"):
+                                user_selected_envs.append((env_label, env_code))
+
+                    for env_label, env_code in user_selected_envs:
+                        st.write(f"**{env_label} - AI Roles - User{i}**")
+                        rc1, rc2, rc3 = st.columns(3)
+                        with rc1:
+                            st.checkbox("Create Agent", key=f"ai_diff_role_create_agent_{i}_{env_code}_{ai_sr}")
+                            st.checkbox("Cortex Services/Functions", key=f"ai_diff_role_cortex_services_{i}_{env_code}_{ai_sr}")
+                            st.checkbox("Agent Usage", key=f"ai_diff_role_agent_usage_{i}_{env_code}_{ai_sr}")
+                        with rc2:
+                            st.checkbox("Create Cortex Search Service", key=f"ai_diff_role_cortex_search_{i}_{env_code}_{ai_sr}")
+                            st.checkbox("Copilot access", key=f"ai_diff_role_copilot_access_{i}_{env_code}_{ai_sr}")
+                        with rc3:
+                            st.checkbox("Create Semantic View", key=f"ai_diff_role_semantic_view_{i}_{env_code}_{ai_sr}")
+                            st.checkbox("Agent Monitoring", key=f"ai_diff_role_agent_monitoring_{i}_{env_code}_{ai_sr}")
+
+                        # Read selected AI roles for this user/env from session_state
+                        user_ai_roles = []
+                        for role_name, role_key in [
+                            ("Create Agent", f"ai_diff_role_create_agent_{i}_{env_code}_{ai_sr}"),
+                            ("Cortex Services/Functions", f"ai_diff_role_cortex_services_{i}_{env_code}_{ai_sr}"),
+                            ("Agent Usage", f"ai_diff_role_agent_usage_{i}_{env_code}_{ai_sr}"),
+                            ("Create Cortex Search Service", f"ai_diff_role_cortex_search_{i}_{env_code}_{ai_sr}"),
+                            ("Copilot access", f"ai_diff_role_copilot_access_{i}_{env_code}_{ai_sr}"),
+                            ("Create Semantic View", f"ai_diff_role_semantic_view_{i}_{env_code}_{ai_sr}"),
+                            ("Agent Monitoring", f"ai_diff_role_agent_monitoring_{i}_{env_code}_{ai_sr}"),
+                        ]:
+                            if st.session_state.get(role_key, False):
+                                user_ai_roles.append(role_name)
+
+                        # Show schemas only if non-Copilot roles are checked
+                        user_schema_roles = [r for r in user_ai_roles if r != "Copilot access"]
+
+                        if user_schema_roles:
+                            db_name = f"{tenant_code}_{subtenant_code}_{selected_project}_{env_code}_DB"
+                            try:
+                                schema_df = conn.query(f"SELECT SCHEMA_NAME FROM {db_name}.INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME != 'INFORMATION_SCHEMA' ORDER BY SCHEMA_NAME")
+                                if not schema_df.empty:
+                                    schema_list = [f"{db_name}.{row['SCHEMA_NAME']}" for _, row in schema_df.iterrows()]
+                                else:
+                                    schema_list = []
+                            except Exception as e:
+                                schema_list = []
+                                st.warning(f"Could not fetch schemas from {db_name}: {e}")
+
+                            if schema_list:
+                                st.write(f"**Schema List ({env_label}) - User-{i}**")
+                                for schema in schema_list:
+                                    st.checkbox(schema, key=f"ai_diff_schema_{i}_{env_code}_{schema}_{ai_sr}")
+
+            # Submit and Display buttons for AI Users Roles
+            if access_mode_ai is not None:
+                if st.button("Submit", key="ai_submit"):
+                    ai_validation_errors = []
+                    ai_rows_to_insert = []
+
+                    t_val = selected_tenant
+                    s_val = selected_subtenant
+                    p_val = selected_project
+
+                    if access_mode_ai == "All Users need same access":
+                        if not selected_envs:
+                            ai_validation_errors.append("At least one environment must be selected.")
+
+                        # Check user emails
+                        num_users = st.session_state.get(f"ai_num_users_{ai_sr}", 1)
+                        user_emails = []
+                        for i in range(1, num_users + 1):
+                            email = st.session_state.get(f"ai_user_email_{i}_{ai_sr}", "")
+                            if not email:
+                                ai_validation_errors.append(f"User-{i} Email is empty.")
+                            else:
+                                user_emails.append(email)
+
+                        # Check roles
+                        selected_ai_roles = []
+                        for role_name, role_key in [
+                            ("Create Agent", f"ai_role_create_agent_{ai_sr}"),
+                            ("Cortex Services/Functions", f"ai_role_cortex_services_{ai_sr}"),
+                            ("Agent Usage", f"ai_role_agent_usage_{ai_sr}"),
+                            ("Create Cortex Search Service", f"ai_role_cortex_search_{ai_sr}"),
+                            ("Copilot access", f"ai_role_copilot_access_{ai_sr}"),
+                            ("Create Semantic View", f"ai_role_semantic_view_{ai_sr}"),
+                            ("Agent Monitoring", f"ai_role_agent_monitoring_{ai_sr}"),
+                        ]:
+                            if st.session_state.get(role_key, False):
+                                selected_ai_roles.append(role_name)
+
+                        if not selected_ai_roles:
+                            ai_validation_errors.append("At least one AI role must be selected.")
+
+                        # Collect checked schemas per env
+                        schema_roles = [r for r in selected_ai_roles if r != "Copilot access"]
+                        has_copilot = "Copilot access" in selected_ai_roles
+
+                        checked_schemas_by_env = {}
+                        for env_label, env_code in selected_envs:
+                            env_schemas = []
+                            for key, val in st.session_state.items():
+                                if key.startswith(f"ai_schema_{env_code}_") and key.endswith(f"_{ai_sr}") and val is True:
+                                    schema_name = key[len(f"ai_schema_{env_code}_"):-(len(str(ai_sr)) + 1)]
+                                    env_schemas.append(schema_name)
+                            checked_schemas_by_env[env_code] = env_schemas
+
+                        if schema_roles:
+                            for env_label, env_code in selected_envs:
+                                if not checked_schemas_by_env.get(env_code):
+                                    ai_validation_errors.append(f"{env_label}: At least one schema must be selected for non-Copilot roles.")
+
+                        if not ai_validation_errors:
+                            for user_email in user_emails:
+                                for env_label, env_code in selected_envs:
+                                    if has_copilot:
+                                        ai_rows_to_insert.append((user_email, "Copilot access", env_label, None))
+                                    for role_label in schema_roles:
+                                        for schema_name in checked_schemas_by_env.get(env_code, []):
+                                            ai_rows_to_insert.append((user_email, role_label, env_label, schema_name))
+
+                    else:
+                        # Users need different access
+                        num_users_diff = st.session_state.get(f"ai_num_users_{ai_sr}", 1)
+
+                        for i in range(1, num_users_diff + 1):
+                            email = st.session_state.get(f"ai_diff_user_email_{i}_{ai_sr}", "")
+                            if not email:
+                                ai_validation_errors.append(f"User-{i} Email is empty.")
+                                continue
+
+                            for env_label, env_code in environments:
+                                if not st.session_state.get(f"ai_diff_env_{i}_{env_code}_{ai_sr}", False):
+                                    continue
+
+                                user_roles = []
+                                for role_name, role_key in [
+                                    ("Create Agent", f"ai_diff_role_create_agent_{i}_{env_code}_{ai_sr}"),
+                                    ("Cortex Services/Functions", f"ai_diff_role_cortex_services_{i}_{env_code}_{ai_sr}"),
+                                    ("Agent Usage", f"ai_diff_role_agent_usage_{i}_{env_code}_{ai_sr}"),
+                                    ("Create Cortex Search Service", f"ai_diff_role_cortex_search_{i}_{env_code}_{ai_sr}"),
+                                    ("Copilot access", f"ai_diff_role_copilot_access_{i}_{env_code}_{ai_sr}"),
+                                    ("Create Semantic View", f"ai_diff_role_semantic_view_{i}_{env_code}_{ai_sr}"),
+                                    ("Agent Monitoring", f"ai_diff_role_agent_monitoring_{i}_{env_code}_{ai_sr}"),
+                                ]:
+                                    if st.session_state.get(role_key, False):
+                                        user_roles.append(role_name)
+
+                                if not user_roles:
+                                    ai_validation_errors.append(f"User-{i} ({env_label}): At least one AI role must be selected.")
+                                    continue
+
+                                user_schema_roles = [r for r in user_roles if r != "Copilot access"]
+                                user_has_copilot = "Copilot access" in user_roles
+
+                                user_schemas = []
+                                for key, val in st.session_state.items():
+                                    if key.startswith(f"ai_diff_schema_{i}_{env_code}_") and key.endswith(f"_{ai_sr}") and val is True:
+                                        schema_name = key[len(f"ai_diff_schema_{i}_{env_code}_"):-(len(str(ai_sr)) + 1)]
+                                        user_schemas.append(schema_name)
+
+                                if user_schema_roles and not user_schemas:
+                                    ai_validation_errors.append(f"User-{i} ({env_label}): At least one schema must be selected for non-Copilot roles.")
+                                    continue
+
+                                if user_has_copilot:
+                                    ai_rows_to_insert.append((email, "Copilot access", env_label, None))
+                                for role_label in user_schema_roles:
+                                    for schema_name in user_schemas:
+                                        ai_rows_to_insert.append((email, role_label, env_label, schema_name))
+
+                    if ai_validation_errors:
+                        for err in ai_validation_errors:
+                            st.error(err)
+                    else:
+                        if ai_rows_to_insert:
+                            session = conn.session()
+                            for user_email, request_type_val, env_label, schema_val in ai_rows_to_insert:
+                                schema_sql = f"'{schema_val}'" if schema_val else "NULL"
+                                session.sql(
+                                    f"""INSERT INTO META_DATA_DB.TABLES_SCHEMA.ACCESS_REQUEST
+                                        (TENANT, SUBTENANT, PROJECT, REQUEST_TYPE, "USER", ENVIRONMENT, SCHEMA, OBJECTS, OBJECT_NAMES)
+                                        VALUES ('{t_val}', '{s_val}', '{p_val}', '{request_type_val}', '{user_email}', '{env_label}', {schema_sql}, NULL, NULL)"""
+                                ).collect()
+                            st.session_state["show_success"] = True
+                            st.session_state["ai_reset"] += 1
+                            st.rerun()
+                        else:
+                            st.warning("No entries to submit. Please check your selections.")
+
+                if st.button("Display", key="ai_display"):
+                    display_df = conn.query("SELECT * FROM META_DATA_DB.TABLES_SCHEMA.ACCESS_REQUEST")
+                    if not display_df.empty:
+                        st.dataframe(display_df, use_container_width=True)
+                    else:
+                        st.info("No records found in ACCESS_REQUEST table.")
