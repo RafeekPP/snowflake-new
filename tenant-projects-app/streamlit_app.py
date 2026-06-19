@@ -5,6 +5,9 @@ import streamlit as st
 
 conn = st.connection("snowflake", ttl=os.getenv("SNOWFLAKE_CONNECTION_TTL"))
 
+current_role = conn.query("SELECT CURRENT_ROLE() AS ROLE", ttl=0).iloc[0]["ROLE"]
+is_admin = current_role == "ACCOUNTADMIN"
+
 st.title("User Access Details")
 
 request_type = st.radio("Request Type", ["Generic Access Request :[ DOP/ETL/RPT ]", "Specific Database Object Access", "AI Users Roles"], horizontal=True)
@@ -168,9 +171,10 @@ if request_type == "Generic Access Request :[ DOP/ETL/RPT ]":
                 else:
                     st.success(f"Selected: {selected_tenant} → {selected_subtenant} → {selected_project}")
 
+        gr = st.session_state["generic_reset"]
+
         st.subheader("Environments to which access is needed")
 
-        gr = st.session_state["generic_reset"]
         env_options = [("Dev", "DEV"), ("SIT", "SIT"), ("ST", "ST"), ("UAT", "UAT"), ("PreProd", "PREPROD"), ("Prod", "PROD")]
         selected_envs = []
         env_cols = st.columns(len(env_options))
@@ -179,20 +183,45 @@ if request_type == "Generic Access Request :[ DOP/ETL/RPT ]":
                 if st.checkbox(env_label, key=f"env_{env_code}_{gr}"):
                     selected_envs.append((env_label, env_code))
 
-        # For each selected environment, show DOP/ETL/RPT user inputs
-        for env_label, env_code in selected_envs:
-            st.markdown(f"---")
-            num_dop = st.selectbox(f"Number of users needed access [{env_label}-DOP Role]", list(range(0, 11)), key=f"num_dop_{env_code}_{gr}")
-            for i in range(1, num_dop + 1):
-                st.text_input(f"{env_label}-DOP User-{i} Email", key=f"dop_user_email_{env_code}_{i}_{gr}")
+        if selected_envs:
+            create_new_user = st.radio("Create New User :", ["Yes", "No"], index=None, horizontal=True, key=f"generic_create_new_user_{gr}")
 
-            num_etl = st.selectbox(f"Number of users needed access [{env_label}-ETL Role]", list(range(0, 11)), key=f"num_etl_{env_code}_{gr}")
-            for i in range(1, num_etl + 1):
-                st.text_input(f"{env_label}-ETL User-{i} Email", key=f"etl_user_email_{env_code}_{i}_{gr}")
+            if create_new_user == "Yes":
+                for env_label, env_code in selected_envs:
+                    new_user_cols = st.columns(3)
+                    with new_user_cols[0]:
+                        st.checkbox(f"New ETL user-{env_label}", key=f"generic_new_etl_{env_code}_{gr}")
+                    with new_user_cols[1]:
+                        st.checkbox(f"New DOP user-{env_label}", key=f"generic_new_dop_{env_code}_{gr}")
+                    with new_user_cols[2]:
+                        st.checkbox(f"New RPT user-{env_label}", key=f"generic_new_rpt_{env_code}_{gr}")
 
-            num_rpt = st.selectbox(f"Number of users needed access [{env_label}-RPT Role]", list(range(0, 11)), key=f"num_rpt_{env_code}_{gr}")
-            for i in range(1, num_rpt + 1):
-                st.text_input(f"{env_label}-RPT User-{i} Email", key=f"rpt_user_email_{env_code}_{i}_{gr}")
+                # Show text inputs for new users to be created
+                for env_label, env_code in selected_envs:
+                    if st.session_state.get(f"generic_new_etl_{env_code}_{gr}", False):
+                        st.text_input(f"{env_label}-ETL user name", key=f"generic_new_etl_name_{env_code}_{gr}")
+                    if st.session_state.get(f"generic_new_dop_{env_code}_{gr}", False):
+                        st.text_input(f"{env_label}-DOP user name", key=f"generic_new_dop_name_{env_code}_{gr}")
+                    if st.session_state.get(f"generic_new_rpt_{env_code}_{gr}", False):
+                        st.text_input(f"{env_label}-RPT user name", key=f"generic_new_rpt_name_{env_code}_{gr}")
+
+            elif create_new_user == "No":
+                for env_label, env_code in selected_envs:
+                    st.markdown(f"---")
+                    num_dop = st.selectbox(f"Number of users needed access [{env_label}-DOP Role]", list(range(0, 11)), key=f"num_dop_{env_code}_{gr}")
+                    for i in range(1, num_dop + 1):
+                        dop_label = f"{env_label}-DOP User Email or User name" if num_dop == 1 else f"{env_label}-DOP User-{i} Email or User-{i} name"
+                        st.text_input(dop_label, key=f"dop_user_email_{env_code}_{i}_{gr}")
+
+                    num_etl = st.selectbox(f"Number of users needed access [{env_label}-ETL Role]", list(range(0, 11)), key=f"num_etl_{env_code}_{gr}")
+                    for i in range(1, num_etl + 1):
+                        etl_label = f"{env_label}-ETL User Email or User name" if num_etl == 1 else f"{env_label}-ETL User-{i} Email or User-{i} name"
+                        st.text_input(etl_label, key=f"etl_user_email_{env_code}_{i}_{gr}")
+
+                    num_rpt = st.selectbox(f"Number of users needed access [{env_label}-RPT Role]", list(range(0, 11)), key=f"num_rpt_{env_code}_{gr}")
+                    for i in range(1, num_rpt + 1):
+                        rpt_label = f"{env_label}-RPT User Email or User name" if num_rpt == 1 else f"{env_label}-RPT User-{i} Email or User-{i} name"
+                        st.text_input(rpt_label, key=f"rpt_user_email_{env_code}_{i}_{gr}")
 
         if st.button("Submit", key="generic_submit"):
             # Validation: check all required fields
@@ -202,34 +231,64 @@ if request_type == "Generic Access Request :[ DOP/ETL/RPT ]":
             if not selected_envs:
                 validation_errors.append("At least one environment must be selected.")
 
-            # Check all user email fields are filled
-            for env_label, env_code in selected_envs:
-                num_dop = st.session_state.get(f"num_dop_{env_code}_{gr}", 0)
-                for i in range(1, num_dop + 1):
-                    email = st.session_state.get(f"dop_user_email_{env_code}_{i}_{gr}", "")
-                    if not email:
-                        validation_errors.append(f"{env_label}-DOP User-{i} Email is empty.")
-                num_etl = st.session_state.get(f"num_etl_{env_code}_{gr}", 0)
-                for i in range(1, num_etl + 1):
-                    email = st.session_state.get(f"etl_user_email_{env_code}_{i}_{gr}", "")
-                    if not email:
-                        validation_errors.append(f"{env_label}-ETL User-{i} Email is empty.")
-                num_rpt = st.session_state.get(f"num_rpt_{env_code}_{gr}", 0)
-                for i in range(1, num_rpt + 1):
-                    email = st.session_state.get(f"rpt_user_email_{env_code}_{i}_{gr}", "")
-                    if not email:
-                        validation_errors.append(f"{env_label}-RPT User-{i} Email is empty.")
+            create_new_user_val = st.session_state.get(f"generic_create_new_user_{gr}", None)
 
-            # Check at least one user count > 0
-            has_users = False
-            for env_label, env_code in selected_envs:
-                if (st.session_state.get(f"num_dop_{env_code}_{gr}", 0) > 0 or
-                    st.session_state.get(f"num_etl_{env_code}_{gr}", 0) > 0 or
-                    st.session_state.get(f"num_rpt_{env_code}_{gr}", 0) > 0):
-                    has_users = True
-                    break
-            if not has_users and selected_envs:
-                validation_errors.append("At least one user must be specified.")
+            if create_new_user_val == "Yes":
+                # Validate new user name fields
+                has_any_new_user = False
+                for env_label, env_code in selected_envs:
+                    if st.session_state.get(f"generic_new_etl_{env_code}_{gr}", False):
+                        has_any_new_user = True
+                        name = st.session_state.get(f"generic_new_etl_name_{env_code}_{gr}", "")
+                        if not name:
+                            validation_errors.append(f"{env_label}-ETL user name is empty.")
+                    if st.session_state.get(f"generic_new_dop_{env_code}_{gr}", False):
+                        has_any_new_user = True
+                        name = st.session_state.get(f"generic_new_dop_name_{env_code}_{gr}", "")
+                        if not name:
+                            validation_errors.append(f"{env_label}-DOP user name is empty.")
+                    if st.session_state.get(f"generic_new_rpt_{env_code}_{gr}", False):
+                        has_any_new_user = True
+                        name = st.session_state.get(f"generic_new_rpt_name_{env_code}_{gr}", "")
+                        if not name:
+                            validation_errors.append(f"{env_label}-RPT user name is empty.")
+                if not has_any_new_user:
+                    validation_errors.append("At least one new user checkbox must be selected.")
+
+            elif create_new_user_val == "No":
+                # Check all user email fields are filled
+                for env_label, env_code in selected_envs:
+                    num_dop = st.session_state.get(f"num_dop_{env_code}_{gr}", 0)
+                    for i in range(1, num_dop + 1):
+                        email = st.session_state.get(f"dop_user_email_{env_code}_{i}_{gr}", "")
+                        if not email:
+                            err_label = f"{env_label}-DOP User Email or User name is empty." if num_dop == 1 else f"{env_label}-DOP User-{i} Email or User-{i} name is empty."
+                            validation_errors.append(err_label)
+                    num_etl = st.session_state.get(f"num_etl_{env_code}_{gr}", 0)
+                    for i in range(1, num_etl + 1):
+                        email = st.session_state.get(f"etl_user_email_{env_code}_{i}_{gr}", "")
+                        if not email:
+                            err_label = f"{env_label}-ETL User Email or User name is empty." if num_etl == 1 else f"{env_label}-ETL User-{i} Email or User-{i} name is empty."
+                            validation_errors.append(err_label)
+                    num_rpt = st.session_state.get(f"num_rpt_{env_code}_{gr}", 0)
+                    for i in range(1, num_rpt + 1):
+                        email = st.session_state.get(f"rpt_user_email_{env_code}_{i}_{gr}", "")
+                        if not email:
+                            err_label = f"{env_label}-RPT User Email or User name is empty." if num_rpt == 1 else f"{env_label}-RPT User-{i} Email or User-{i} name is empty."
+                            validation_errors.append(err_label)
+
+                # Check at least one user count > 0
+                has_users = False
+                for env_label, env_code in selected_envs:
+                    if (st.session_state.get(f"num_dop_{env_code}_{gr}", 0) > 0 or
+                        st.session_state.get(f"num_etl_{env_code}_{gr}", 0) > 0 or
+                        st.session_state.get(f"num_rpt_{env_code}_{gr}", 0) > 0):
+                        has_users = True
+                        break
+                if not has_users and selected_envs:
+                    validation_errors.append("At least one user must be specified.")
+            else:
+                validation_errors.append("Please select 'Create New User' option.")
 
             if validation_errors:
                 st.error("Please enter all details")
@@ -252,24 +311,41 @@ if request_type == "Generic Access Request :[ DOP/ETL/RPT ]":
                     s_val = selected_subtenant
                     p_val = selected_project
 
-                # Collect all users per environment and role type
                 users_to_insert = []
-                for env_label, env_code in selected_envs:
-                    num_dop = st.session_state.get(f"num_dop_{env_code}_{gr}", 0)
-                    for i in range(1, num_dop + 1):
-                        email = st.session_state.get(f"dop_user_email_{env_code}_{i}_{gr}", "")
-                        if email:
-                            users_to_insert.append((email, f"{env_label}-DOP Role", env_label))
-                    num_etl = st.session_state.get(f"num_etl_{env_code}_{gr}", 0)
-                    for i in range(1, num_etl + 1):
-                        email = st.session_state.get(f"etl_user_email_{env_code}_{i}_{gr}", "")
-                        if email:
-                            users_to_insert.append((email, f"{env_label}-ETL Role", env_label))
-                    num_rpt = st.session_state.get(f"num_rpt_{env_code}_{gr}", 0)
-                    for i in range(1, num_rpt + 1):
-                        email = st.session_state.get(f"rpt_user_email_{env_code}_{i}_{gr}", "")
-                        if email:
-                            users_to_insert.append((email, f"{env_label}-RPT Role", env_label))
+
+                if create_new_user_val == "Yes":
+                    # Collect new users to be created
+                    for env_label, env_code in selected_envs:
+                        if st.session_state.get(f"generic_new_etl_{env_code}_{gr}", False):
+                            name = st.session_state.get(f"generic_new_etl_name_{env_code}_{gr}", "")
+                            if name:
+                                users_to_insert.append((name, f"New ETL user-{env_label}", env_label))
+                        if st.session_state.get(f"generic_new_dop_{env_code}_{gr}", False):
+                            name = st.session_state.get(f"generic_new_dop_name_{env_code}_{gr}", "")
+                            if name:
+                                users_to_insert.append((name, f"New DOP user-{env_label}", env_label))
+                        if st.session_state.get(f"generic_new_rpt_{env_code}_{gr}", False):
+                            name = st.session_state.get(f"generic_new_rpt_name_{env_code}_{gr}", "")
+                            if name:
+                                users_to_insert.append((name, f"New RPT user-{env_label}", env_label))
+                else:
+                    # Collect existing users per environment and role type
+                    for env_label, env_code in selected_envs:
+                        num_dop = st.session_state.get(f"num_dop_{env_code}_{gr}", 0)
+                        for i in range(1, num_dop + 1):
+                            email = st.session_state.get(f"dop_user_email_{env_code}_{i}_{gr}", "")
+                            if email:
+                                users_to_insert.append((email, f"{env_label}-DOP Role", env_label))
+                        num_etl = st.session_state.get(f"num_etl_{env_code}_{gr}", 0)
+                        for i in range(1, num_etl + 1):
+                            email = st.session_state.get(f"etl_user_email_{env_code}_{i}_{gr}", "")
+                            if email:
+                                users_to_insert.append((email, f"{env_label}-ETL Role", env_label))
+                        num_rpt = st.session_state.get(f"num_rpt_{env_code}_{gr}", 0)
+                        for i in range(1, num_rpt + 1):
+                            email = st.session_state.get(f"rpt_user_email_{env_code}_{i}_{gr}", "")
+                            if email:
+                                users_to_insert.append((email, f"{env_label}-RPT Role", env_label))
 
                 if users_to_insert:
                     insert_count = 0
@@ -277,20 +353,21 @@ if request_type == "Generic Access Request :[ DOP/ETL/RPT ]":
                     for user_email, role_type, env_label in users_to_insert:
                         session.sql(
                             f"""INSERT INTO META_DATA_DB.TABLES_SCHEMA.ACCESS_REQUEST
-                                (TENANT, SUBTENANT, PROJECT, REQUEST_TYPE, "USER", ENVIRONMENT, SCHEMA, OBJECTS, OBJECT_NAMES)
-                                VALUES ('{t_val}', '{s_val}', '{p_val}', '{role_type}', '{user_email}', '{env_label}', NULL, NULL, NULL)"""
+                                (TENANT, SUBTENANT, PROJECT, REQUEST_TYPE, "USER", ENVIRONMENT, SCHEMA, OBJECTS, OBJECT_NAMES, INSERT_TIME)
+                                VALUES ('{t_val}', '{s_val}', '{p_val}', '{role_type}', '{user_email}', '{env_label}', NULL, NULL, NULL, CURRENT_TIMESTAMP())"""
                         ).collect()
                         insert_count += 1
                     st.session_state["show_success"] = True
                     st.session_state["generic_reset"] += 1
                     st.rerun()
 
-        if st.button("Display", key="generic_display"):
-            display_df = conn.query("SELECT * FROM META_DATA_DB.TABLES_SCHEMA.ACCESS_REQUEST")
-            if not display_df.empty:
-                st.dataframe(display_df, use_container_width=True)
-            else:
-                st.info("No records found in ACCESS_REQUEST table.")
+        if is_admin:
+            if st.button("Display", key="generic_display"):
+                display_df = conn.query("SELECT TENANT, SUBTENANT, PROJECT, REQUEST_TYPE, \"USER\", ENVIRONMENT, SCHEMA, OBJECTS, OBJECT_NAMES, INSERT_TIME FROM META_DATA_DB.TABLES_SCHEMA.ACCESS_REQUEST", ttl=0)
+                if not display_df.empty:
+                    st.dataframe(display_df, use_container_width=True)
+                else:
+                    st.info("No records found in ACCESS_REQUEST table.")
 
 elif request_type == "Specific Database Object Access":
     mirrored_access_sdo = st.radio("Mirrored access of existing user", ["Yes", "No"], index=None, horizontal=True, key=f"sdo_mirrored_{st.session_state['sdo_reset']}")
@@ -336,9 +413,8 @@ elif request_type == "Specific Database Object Access":
 
         if access_mode == "All Users need same access":
             for i in range(1, num_users + 1):
-                st.text_input(f"User-{i} Email", key=f"sdo_user_email_{i}_{sr}")
-
-            st.radio("Role", ["Read", "Read/Write", "Read/Write/Create"], index=None, horizontal=True, key=f"sdo_role_{sr}")
+                user_label = "User Email" if num_users == 1 else f"User-{i} Email"
+                st.text_input(user_label, key=f"sdo_user_email_{i}_{sr}")
 
             st.subheader("Environment to which access is needed")
             env_cols = st.columns(len(environments))
@@ -349,75 +425,90 @@ elif request_type == "Specific Database Object Access":
                         selected_envs.append((env_label, env_code))
 
             if selected_envs:
-                st.subheader("Select Object Types")
-                obj_row = st.columns(5)
-                with obj_row[0]:
-                    st.checkbox("Tables", key=f"sdo_objtype_Tables_{sr}")
-                with obj_row[1]:
-                    st.checkbox("Functions", key=f"sdo_objtype_Functions_{sr}")
-                with obj_row[2]:
-                    st.checkbox("Procedures", key=f"sdo_objtype_Procedures_{sr}")
-                with obj_row[3]:
-                    st.checkbox("Views", key=f"sdo_objtype_Views_{sr}")
-                with obj_row[4]:
-                    st.checkbox("Stages", key=f"sdo_objtype_Stages_{sr}")
+                for env_label, env_code in selected_envs:
+                    st.radio(
+                        f"Role ({env_label})",
+                        [f"Read-{env_label}", f"Read/Write-{env_label}", f"Read/Write/Create-{env_label}"],
+                        index=None,
+                        horizontal=True,
+                        key=f"sdo_role_{env_code}_{sr}"
+                    )
 
-                selected_obj_types = []
-                for ot in ["Tables", "Functions", "Procedures", "Views", "Stages"]:
-                    if st.session_state.get(f"sdo_objtype_{ot}_{sr}", False):
-                        selected_obj_types.append(ot)
+                # Determine which environments have a role selected
+                envs_with_role_selected = []
+                for env_label, env_code in selected_envs:
+                    if st.session_state.get(f"sdo_role_{env_code}_{sr}") is not None:
+                        envs_with_role_selected.append((env_label, env_code))
 
-                if selected_obj_types:
-                    for env_label, env_code in selected_envs:
-                        db_name = f"{tenant_code}_{subtenant_code}_{selected_project}_{env_code}_DB"
-                        try:
-                            schema_df = conn.query(f"SELECT SCHEMA_NAME FROM {db_name}.INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME != 'INFORMATION_SCHEMA' ORDER BY SCHEMA_NAME")
-                            if not schema_df.empty:
-                                schema_list = [f"{db_name}.{row['SCHEMA_NAME']}" for _, row in schema_df.iterrows()]
-                            else:
+                if envs_with_role_selected:
+                    st.subheader("Select Object Types")
+                    obj_types = ["Tables", "Functions", "Procedures", "Views", "Stages"]
+                    obj_cols = st.columns(5)
+                    for env_label, env_code in envs_with_role_selected:
+                        for idx, ot in enumerate(obj_types):
+                            with obj_cols[idx]:
+                                st.checkbox(f"{env_label}-{ot}", key=f"sdo_objtype_{env_code}_{ot}_{sr}")
+
+                        selected_obj_types_by_env = {}
+                        for env_label, env_code in envs_with_role_selected:
+                            env_obj_types = []
+                            for ot in obj_types:
+                                if st.session_state.get(f"sdo_objtype_{env_code}_{ot}_{sr}", False):
+                                    env_obj_types.append(ot)
+                            if env_obj_types:
+                                selected_obj_types_by_env[(env_label, env_code)] = env_obj_types
+
+                        for (env_label, env_code), env_obj_types in selected_obj_types_by_env.items():
+                            db_name = f"{tenant_code}_{subtenant_code}_{selected_project}_{env_code}_DB"
+                            try:
+                                schema_df = conn.query(f"SELECT SCHEMA_NAME FROM {db_name}.INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME != 'INFORMATION_SCHEMA' ORDER BY SCHEMA_NAME")
+                                if not schema_df.empty:
+                                    schema_list = [f"{db_name}.{row['SCHEMA_NAME']}" for _, row in schema_df.iterrows()]
+                                else:
+                                    schema_list = []
+                            except Exception:
                                 schema_list = []
-                        except Exception:
-                            schema_list = []
 
-                        if schema_list:
-                            st.write(f"**Schema List ({env_label})**")
-                            for schema in schema_list:
-                                schema_checked = st.checkbox(schema, key=f"sdo_schema_{env_code}_{schema}_{sr}")
-                                if schema_checked:
-                                    db_part = schema.split('.')[0]
-                                    schema_part = schema.split('.')[1]
-                                    for obj_type in selected_obj_types:
-                                        if obj_type == "Tables":
-                                            query = f"SELECT TABLE_NAME FROM {db_part}.INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{schema_part}' AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME"
-                                        elif obj_type == "Views":
-                                            query = f"SELECT TABLE_NAME FROM {db_part}.INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{schema_part}' AND TABLE_TYPE = 'VIEW' ORDER BY TABLE_NAME"
-                                        elif obj_type == "Functions":
-                                            query = f"SELECT FUNCTION_NAME FROM {db_part}.INFORMATION_SCHEMA.FUNCTIONS WHERE FUNCTION_SCHEMA = '{schema_part}' ORDER BY FUNCTION_NAME"
-                                        elif obj_type == "Procedures":
-                                            query = f"SELECT PROCEDURE_NAME FROM {db_part}.INFORMATION_SCHEMA.PROCEDURES WHERE PROCEDURE_SCHEMA = '{schema_part}' ORDER BY PROCEDURE_NAME"
-                                        elif obj_type == "Stages":
-                                            query = f"SHOW STAGES IN {schema}"
+                            if schema_list:
+                                st.write(f"**Schema List ({env_label})**")
+                                for schema in schema_list:
+                                    schema_checked = st.checkbox(schema, key=f"sdo_schema_{env_code}_{schema}_{sr}")
+                                    if schema_checked:
+                                        db_part = schema.split('.')[0]
+                                        schema_part = schema.split('.')[1]
+                                        for obj_type in env_obj_types:
+                                            if obj_type == "Tables":
+                                                query = f"SELECT TABLE_NAME FROM {db_part}.INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{schema_part}' AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME"
+                                            elif obj_type == "Views":
+                                                query = f"SELECT TABLE_NAME FROM {db_part}.INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{schema_part}' AND TABLE_TYPE = 'VIEW' ORDER BY TABLE_NAME"
+                                            elif obj_type == "Functions":
+                                                query = f"SELECT FUNCTION_NAME FROM {db_part}.INFORMATION_SCHEMA.FUNCTIONS WHERE FUNCTION_SCHEMA = '{schema_part}' ORDER BY FUNCTION_NAME"
+                                            elif obj_type == "Procedures":
+                                                query = f"SELECT PROCEDURE_NAME FROM {db_part}.INFORMATION_SCHEMA.PROCEDURES WHERE PROCEDURE_SCHEMA = '{schema_part}' ORDER BY PROCEDURE_NAME"
+                                            elif obj_type == "Stages":
+                                                query = f"SHOW STAGES IN {schema}"
 
-                                        try:
-                                            if obj_type == "Stages":
-                                                obj_df = conn.query(query)
-                                                obj_names = obj_df["name"].tolist() if not obj_df.empty else []
-                                            else:
-                                                obj_df = conn.query(query)
-                                                obj_names = obj_df.iloc[:, 0].tolist() if not obj_df.empty else []
-                                        except Exception as e:
-                                            obj_names = []
-                                            st.warning(f"Could not fetch {obj_type.lower()} from {schema}: {e}")
+                                            try:
+                                                if obj_type == "Stages":
+                                                    obj_df = conn.query(query)
+                                                    obj_names = obj_df["name"].tolist() if not obj_df.empty else []
+                                                else:
+                                                    obj_df = conn.query(query)
+                                                    obj_names = obj_df.iloc[:, 0].tolist() if not obj_df.empty else []
+                                            except Exception as e:
+                                                obj_names = []
+                                                st.warning(f"Could not fetch {obj_type.lower()} from {schema}: {e}")
 
-                                        if obj_names:
-                                            st.write(f"*{obj_type} in {schema}:*")
-                                            for obj_name in obj_names:
-                                                st.checkbox(f"  {obj_name}", key=f"sdo_obj_{env_code}_{schema}_{obj_type}_{obj_name}_{sr}")
+                                            if obj_names:
+                                                st.write(f"*{env_label}-{obj_type} in {schema}:*")
+                                                for obj_name in obj_names:
+                                                    st.checkbox(f"  {obj_name}", key=f"sdo_obj_{env_code}_{schema}_{obj_type}_{obj_name}_{sr}")
 
         elif access_mode == "Users need different access":
             for i in range(1, num_users + 1):
                 st.markdown(f"---")
-                st.text_input(f"User-{i} Email", key=f"sdo_user_email_{i}_{sr}")
+                user_label = "User Email" if num_users == 1 else f"User-{i} Email"
+                st.text_input(user_label, key=f"sdo_user_email_{i}_{sr}")
 
                 env_cols = st.columns(len(environments))
                 user_selected_envs = []
@@ -497,19 +588,19 @@ elif request_type == "Specific Database Object Access":
         if access_mode is not None:
             if st.button("Submit", key="sdo_submit"):
                 sdo_validation_errors = []
-                num_users = st.session_state.get(f"sdo_num_users_{sr}", 1)
-                access_mode = st.session_state.get(f"sdo_access_mode_{sr}", "All Users need same access") if num_users > 1 else "All Users need same access"
 
                 if access_mode == "All Users need same access":
                     for ui in range(1, num_users + 1):
                         email = st.session_state.get(f"sdo_user_email_{ui}_{sr}", "")
                         if not email:
-                            sdo_validation_errors.append(f"User-{ui} Email is empty.")
+                            err_label = "User Email is empty." if num_users == 1 else f"User-{ui} Email is empty."
+                            sdo_validation_errors.append(err_label)
                 else:
                     for ui in range(1, num_users + 1):
                         email = st.session_state.get(f"sdo_user_email_{ui}_{sr}", "")
                         if not email:
-                            sdo_validation_errors.append(f"User-{ui} Email is empty.")
+                            err_label = "User Email is empty." if num_users == 1 else f"User-{ui} Email is empty."
+                            sdo_validation_errors.append(err_label)
 
                 if sdo_validation_errors:
                     st.error("Please enter all details")
@@ -520,45 +611,55 @@ elif request_type == "Specific Database Object Access":
                     rows_to_insert = []
 
                     if access_mode == "All Users need same access":
-                        shared_role = st.session_state.get(f"sdo_role_{sr}", "Read")
                         for ui in range(1, num_users + 1):
                             user_email = st.session_state.get(f"sdo_user_email_{ui}_{sr}", "")
                             if not user_email:
                                 continue
                             # Collect checked objects (shared): sdo_obj_{env_code}_{schema}_{obj_type}_{obj_name}_{sr}
                             for key, val in st.session_state.items():
-                                if key.startswith("sdo_obj_") and key.endswith(f"_{sr}") and val is True:
-                                    parts = key[len("sdo_obj_"):]
-                                    parts = parts[:-(len(str(sr)) + 1)]
-                                    env_code_found = None
-                                    for _, ec in environments:
-                                        if parts.startswith(f"{ec}_"):
-                                            env_code_found = ec
-                                            break
-                                    if not env_code_found:
-                                        continue
-                                    remainder = parts[len(env_code_found) + 1:]
-                                    dot_idx = remainder.find(".")
-                                    if dot_idx < 0:
-                                        continue
-                                    after_dot = remainder[dot_idx + 1:]
-                                    obj_type_found = None
-                                    for ot in ["Tables", "Views", "Functions", "Procedures", "Stages"]:
-                                        marker = f"_{ot}_"
-                                        pos = after_dot.find(marker)
-                                        if pos >= 0:
-                                            obj_type_found = ot
-                                            obj_name = after_dot[pos + len(marker):]
-                                            break
-                                    if not obj_type_found:
-                                        continue
-                                    full_schema = f"{remainder[:dot_idx]}.{after_dot[:after_dot.find(f'_{obj_type_found}_')]}"
-                                    env_label_found = env_code_found
-                                    for el, ec in environments:
-                                        if ec == env_code_found:
-                                            env_label_found = el
-                                            break
-                                    rows_to_insert.append((user_email, shared_role, env_label_found, full_schema, obj_type_found.lower(), obj_name))
+                                if not (key.startswith("sdo_obj_") and val is True):
+                                    continue
+                                # Ensure key ends with _{sr} exactly
+                                suffix = f"_{sr}"
+                                if not key.endswith(suffix):
+                                    continue
+                                # Skip keys from "Users need different access" path (sdo_obj_{user_idx}_{env}...)
+                                inner = key[len("sdo_obj_"):-len(suffix)]
+                                # Check if it starts with a digit (user index) - skip those
+                                first_underscore = inner.find("_")
+                                if first_underscore > 0 and inner[:first_underscore].isdigit():
+                                    continue
+                                env_code_found = None
+                                for _, ec in environments:
+                                    if inner.startswith(f"{ec}_"):
+                                        env_code_found = ec
+                                        break
+                                if not env_code_found:
+                                    continue
+                                remainder = inner[len(env_code_found) + 1:]
+                                dot_idx = remainder.find(".")
+                                if dot_idx < 0:
+                                    continue
+                                after_dot = remainder[dot_idx + 1:]
+                                obj_type_found = None
+                                for ot in ["Tables", "Views", "Functions", "Procedures", "Stages"]:
+                                    marker = f"_{ot}_"
+                                    pos = after_dot.find(marker)
+                                    if pos >= 0:
+                                        obj_type_found = ot
+                                        obj_name = after_dot[pos + len(marker):]
+                                        break
+                                if not obj_type_found:
+                                    continue
+                                full_schema = f"{remainder[:dot_idx]}.{after_dot[:after_dot.find(f'_{obj_type_found}_')]}"
+                                env_label_found = env_code_found
+                                for el, ec in environments:
+                                    if ec == env_code_found:
+                                        env_label_found = el
+                                        break
+                                # Get role for this environment
+                                env_role = st.session_state.get(f"sdo_role_{env_code_found}_{sr}", "")
+                                rows_to_insert.append((user_email, env_role, env_label_found, full_schema, obj_type_found.lower(), obj_name))
                     else:
                         # Users need different access
                         for ui in range(1, num_users + 1):
@@ -607,19 +708,20 @@ elif request_type == "Specific Database Object Access":
                         for user_email, role_type, env_label, schema_name, obj_type, obj_name in rows_to_insert:
                             session.sql(
                                 f"""INSERT INTO META_DATA_DB.TABLES_SCHEMA.ACCESS_REQUEST
-                                    (TENANT, SUBTENANT, PROJECT, REQUEST_TYPE, "USER", ENVIRONMENT, SCHEMA, OBJECTS, OBJECT_NAMES)
-                                    VALUES ('{t_val}', '{s_val}', '{p_val}', '{role_type}', '{user_email}', '{env_label}', '{schema_name}', '{obj_type}', '{obj_name}')"""
+                                    (TENANT, SUBTENANT, PROJECT, REQUEST_TYPE, "USER", ENVIRONMENT, SCHEMA, OBJECTS, OBJECT_NAMES, INSERT_TIME)
+                                    VALUES ('{t_val}', '{s_val}', '{p_val}', '{role_type}', '{user_email}', '{env_label}', '{schema_name}', '{obj_type}', '{obj_name}', CURRENT_TIMESTAMP())"""
                             ).collect()
                         st.session_state["show_success"] = True
                         st.session_state["sdo_reset"] += 1
                         st.rerun()
 
-            if st.button("Display", key="sdo_display"):
-                display_df = conn.query("SELECT * FROM META_DATA_DB.TABLES_SCHEMA.ACCESS_REQUEST")
-                if not display_df.empty:
-                    st.dataframe(display_df, use_container_width=True)
-                else:
-                    st.info("No records found in ACCESS_REQUEST table.")
+            if is_admin:
+                if st.button("Display", key="sdo_display"):
+                    display_df = conn.query("SELECT TENANT, SUBTENANT, PROJECT, REQUEST_TYPE, \"USER\", ENVIRONMENT, SCHEMA, OBJECTS, OBJECT_NAMES, INSERT_TIME FROM META_DATA_DB.TABLES_SCHEMA.ACCESS_REQUEST", ttl=0)
+                    if not display_df.empty:
+                        st.dataframe(display_df, use_container_width=True)
+                    else:
+                        st.info("No records found in ACCESS_REQUEST table.")
 else:
     mirrored_access_ai = st.radio("Mirrored access of existing user", ["Yes", "No"], index=None, horizontal=True, key="ai_mirrored")
     if mirrored_access_ai == "Yes":
@@ -673,7 +775,8 @@ else:
 
             if access_mode_ai == "All Users need same access":
                 for i in range(1, num_users + 1):
-                    st.text_input(f"User-{i} Email", key=f"ai_user_email_{i}_{ai_sr}")
+                    user_label = "User Email" if num_users == 1 else f"User-{i} Email"
+                    st.text_input(user_label, key=f"ai_user_email_{i}_{ai_sr}")
 
                 st.subheader("Select AI Roles")
                 rc1, rc2, rc3 = st.columns(3)
@@ -728,7 +831,8 @@ else:
                 for i in range(1, num_users + 1):
                     col_email, col_role = st.columns([2, 3])
                     with col_email:
-                        st.text_input(f"User-{i} Email", key=f"ai_diff_user_email_{i}_{ai_sr}")
+                        user_label = "User Email" if num_users == 1 else f"User-{i} Email"
+                        st.text_input(user_label, key=f"ai_diff_user_email_{i}_{ai_sr}")
 
                     env_cols = st.columns(len(environments))
                     user_selected_envs = []
@@ -805,7 +909,8 @@ else:
                         for i in range(1, num_users + 1):
                             email = st.session_state.get(f"ai_user_email_{i}_{ai_sr}", "")
                             if not email:
-                                ai_validation_errors.append(f"User-{i} Email is empty.")
+                                err_label = "User Email is empty." if num_users == 1 else f"User-{i} Email is empty."
+                                ai_validation_errors.append(err_label)
                             else:
                                 user_emails.append(email)
 
@@ -860,7 +965,8 @@ else:
                         for i in range(1, num_users_diff + 1):
                             email = st.session_state.get(f"ai_diff_user_email_{i}_{ai_sr}", "")
                             if not email:
-                                ai_validation_errors.append(f"User-{i} Email is empty.")
+                                err_label = "User Email is empty." if num_users == 1 else f"User-{i} Email is empty."
+                                ai_validation_errors.append(err_label)
                                 continue
 
                             for env_label, env_code in environments:
@@ -913,8 +1019,8 @@ else:
                                 schema_sql = f"'{schema_val}'" if schema_val else "NULL"
                                 session.sql(
                                     f"""INSERT INTO META_DATA_DB.TABLES_SCHEMA.ACCESS_REQUEST
-                                        (TENANT, SUBTENANT, PROJECT, REQUEST_TYPE, "USER", ENVIRONMENT, SCHEMA, OBJECTS, OBJECT_NAMES)
-                                        VALUES ('{t_val}', '{s_val}', '{p_val}', '{request_type_val}', '{user_email}', '{env_label}', {schema_sql}, NULL, NULL)"""
+                                        (TENANT, SUBTENANT, PROJECT, REQUEST_TYPE, "USER", ENVIRONMENT, SCHEMA, OBJECTS, OBJECT_NAMES, INSERT_TIME)
+                                        VALUES ('{t_val}', '{s_val}', '{p_val}', '{request_type_val}', '{user_email}', '{env_label}', {schema_sql}, NULL, NULL, CURRENT_TIMESTAMP())"""
                                 ).collect()
                             st.session_state["show_success"] = True
                             st.session_state["ai_reset"] += 1
@@ -922,9 +1028,10 @@ else:
                         else:
                             st.warning("No entries to submit. Please check your selections.")
 
-                if st.button("Display", key="ai_display"):
-                    display_df = conn.query("SELECT * FROM META_DATA_DB.TABLES_SCHEMA.ACCESS_REQUEST")
-                    if not display_df.empty:
-                        st.dataframe(display_df, use_container_width=True)
-                    else:
-                        st.info("No records found in ACCESS_REQUEST table.")
+                if is_admin:
+                    if st.button("Display", key="ai_display"):
+                        display_df = conn.query("SELECT TENANT, SUBTENANT, PROJECT, REQUEST_TYPE, \"USER\", ENVIRONMENT, SCHEMA, OBJECTS, OBJECT_NAMES, INSERT_TIME FROM META_DATA_DB.TABLES_SCHEMA.ACCESS_REQUEST", ttl=0)
+                        if not display_df.empty:
+                            st.dataframe(display_df, use_container_width=True)
+                        else:
+                            st.info("No records found in ACCESS_REQUEST table.")
