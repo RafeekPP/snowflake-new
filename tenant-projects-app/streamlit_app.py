@@ -5,6 +5,50 @@ import streamlit as st
 
 conn = st.connection("snowflake", ttl=os.getenv("SNOWFLAKE_CONNECTION_TTL"))
 
+# --- Password Gate ---
+def check_password():
+    """Authenticate user against META_DATA_DB.TABLES_SCHEMA.APP_PASSWORDS table."""
+    if st.session_state.get("authenticated"):
+        return True
+
+    st.markdown("""
+    <style>
+        .stApp {
+            background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOTIwIDEwODAiPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJza3kiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6Izg3Q0VFQiIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjQwJSIgc3R5bGU9InN0b3AtY29sb3I6I0IwRTBFNiIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjcwJSIgc3R5bGU9InN0b3AtY29sb3I6I0UwRjdGQSIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iaGlsbDEiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6IzRDQUY1MCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMyRTdEMzIiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImhpbGwyIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMzODhFM0MiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMUI1RTIwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJoaWxsMyIgeDE9IjAlIiB5MT0iMCUiIHgyPSIwJSIgeTI9IjEwMCUiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMkU3RDMyIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3R5bGU9InN0b3AtY29sb3I6IzFCNUUyMCIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iaGlsbDQiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6IzY2QkI2QSIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiM0M0EwNDciLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImhpbGw1IiB4MT0iMCUiIHkxPSIwJSIgeDI9IjAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiM4MUM3ODQiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojNENBRjUwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPHJhZGlhbEdyYWRpZW50IGlkPSJzdW4iIGN4PSI4MCUiIGN5PSIxNSUiIHI9IjglIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6I0ZGRjlDNCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjcwJSIgc3R5bGU9InN0b3AtY29sb3I6I0ZGRjE3NiIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNGRkVFNTg7c3RvcC1vcGFjaXR5OjAiLz4KICAgIDwvcmFkaWFsR3JhZGllbnQ+CiAgICA8ZmlsdGVyIGlkPSJibHVyMSI+PGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMiIvPjwvZmlsdGVyPgogICAgPGZpbHRlciBpZD0iYmx1cjIiPjxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjEiLz48L2ZpbHRlcj4KICA8L2RlZnM+CiAgPCEtLSBTa3kgLS0+CiAgPHJlY3Qgd2lkdGg9IjE5MjAiIGhlaWdodD0iMTA4MCIgZmlsbD0idXJsKCNza3kpIi8+CiAgPCEtLSBTdW4gZ2xvdyAtLT4KICA8Y2lyY2xlIGN4PSIxNTM2IiBjeT0iMTYyIiByPSIxNTQiIGZpbGw9InVybCgjc3VuKSIvPgogIDwhLS0gU3VuIC0tPgogIDxjaXJjbGUgY3g9IjE1MzYiIGN5PSIxNjIiIHI9IjUwIiBmaWxsPSIjRkZGOUM0IiBvcGFjaXR5PSIwLjkiLz4KICA8IS0tIERpc3RhbnQgbW91bnRhaW5zIChtaXN0eSkgLS0+CiAgPHBhdGggZD0iTTAsNTAwIFEyMDAsMzUwIDQwMCw0MjAgUTYwMCwzMjAgODAwLDQwMCBRMTAwMCwzMDAgMTIwMCwzODAgUTE0MDAsMzEwIDE2MDAsMzkwIFExODAwLDM0MCAxOTIwLDQwMCBMMTkyMCw2MDAgTDAsNjAwIFoiIGZpbGw9IiM1RDlCNkEiIG9wYWNpdHk9IjAuNCIgZmlsdGVyPSJ1cmwoI2JsdXIxKSIvPgogIDwhLS0gTWlkLWRpc3RhbmNlIGhpbGxzIC0tPgogIDxwYXRoIGQ9Ik0wLDU1MCBRMTUwLDQyMCAzNTAsNDgwIFE1NTAsMzgwIDc1MCw0NjAgUTk1MCwzNzAgMTE1MCw0NTAgUTEzNTAsMzgwIDE1NTAsNDQwIFExNzUwLDM5MCAxOTIwLDQ3MCBMMTkyMCw3MDAgTDAsNzAwIFoiIGZpbGw9InVybCgjaGlsbDUpIiBvcGFjaXR5PSIwLjciLz4KICA8IS0tIEhpbGwgbGF5ZXIgMSAoYmFjaykgLS0+CiAgPHBhdGggZD0iTTAsNjAwIFEyNDAsNDUwIDQ4MCw1MjAgUTcyMCw0MzAgOTYwLDUxMCBRMTIwMCw0MjAgMTQ0MCw1MDAgUTE2ODAsNDQwIDE5MjAsNTMwIEwxOTIwLDc4MCBMMCw3ODAgWiIgZmlsbD0idXJsKCNoaWxsNCkiLz4KICA8IS0tIEhpbGwgbGF5ZXIgMiAtLT4KICA8cGF0aCBkPSJNMCw2ODAgUTMwMCw1NjAgNjAwLDYyMCBROTAwLDUzMCAxMTAwLDYwMCBRMTMwMCw1NDAgMTUwMCw1OTAgUTE3MDAsNTUwIDE5MjAsNjIwIEwxOTIwLDg1MCBMMCw4NTAgWiIgZmlsbD0idXJsKCNoaWxsMSkiLz4KICA8IS0tIEhpbGwgbGF5ZXIgMyAtLT4KICA8cGF0aCBkPSJNMCw3NTAgUTI1MCw2NTAgNTAwLDcwMCBRNzUwLDY0MCAxMDAwLDY5MCBRMTI1MCw2MzAgMTUwMCw2ODAgUTE3NTAsNjUwIDE5MjAsNzAwIEwxOTIwLDkyMCBMMCw5MjAgWiIgZmlsbD0idXJsKCNoaWxsMikiLz4KICA8IS0tIEZvcmVncm91bmQgaGlsbCAtLT4KICA8cGF0aCBkPSJNMCw4NTAgUTIwMCw3NzAgNDUwLDgxMCBRNzAwLDc1MCA5NTAsODAwIFExMjAwLDc2MCAxNDUwLDc5MCBRMTcwMCw3NzAgMTkyMCw4MTAgTDE5MjAsMTA4MCBMMCwxMDgwIFoiIGZpbGw9InVybCgjaGlsbDMpIi8+CiAgPCEtLSBUcmVlcyBvbiBoaWxscyAoc2ltcGxpZmllZCkgLS0+CiAgPGcgb3BhY2l0eT0iMC42Ij4KICAgIDxlbGxpcHNlIGN4PSIyMDAiIGN5PSI2MjAiIHJ4PSIxNSIgcnk9IjMwIiBmaWxsPSIjMUI1RTIwIi8+CiAgICA8ZWxsaXBzZSBjeD0iMjMwIiBjeT0iNjE1IiByeD0iMTIiIHJ5PSIyNSIgZmlsbD0iIzJFN0QzMiIvPgogICAgPGVsbGlwc2UgY3g9IjI2MCIgY3k9IjYyMiIgcng9IjE0IiByeT0iMjgiIGZpbGw9IiMxQjVFMjAiLz4KICAgIDxlbGxpcHNlIGN4PSI1MDAiIGN5PSI1OTAiIHJ4PSIxNiIgcnk9IjMyIiBmaWxsPSIjMUI1RTIwIi8+CiAgICA8ZWxsaXBzZSBjeD0iNTMwIiBjeT0iNTg1IiByeD0iMTMiIHJ5PSIyNiIgZmlsbD0iIzJFN0QzMiIvPgogICAgPGVsbGlwc2UgY3g9IjgwMCIgY3k9IjYwMCIgcng9IjE1IiByeT0iMzAiIGZpbGw9IiMxQjVFMjAiLz4KICAgIDxlbGxpcHNlIGN4PSI4MzAiIGN5PSI1OTUiIHJ4PSIxMiIgcnk9IjI0IiBmaWxsPSIjMkU3RDMyIi8+CiAgICA8ZWxsaXBzZSBjeD0iODYwIiBjeT0iNjAyIiByeD0iMTQiIHJ5PSIyOCIgZmlsbD0iIzFCNUUyMCIvPgogICAgPGVsbGlwc2UgY3g9IjExMDAiIGN5PSI1ODAiIHJ4PSIxNiIgcnk9IjMyIiBmaWxsPSIjMkU3RDMyIi8+CiAgICA8ZWxsaXBzZSBjeD0iMTEzMCIgY3k9IjU3NSIgcng9IjEzIiByeT0iMjYiIGZpbGw9IiMxQjVFMjAiLz4KICAgIDxlbGxpcHNlIGN4PSIxNDAwIiBjeT0iNTkwIiByeD0iMTUiIHJ5PSIzMCIgZmlsbD0iIzFCNUUyMCIvPgogICAgPGVsbGlwc2UgY3g9IjE0MzAiIGN5PSI1ODUiIHJ4PSIxMiIgcnk9IjI0IiBmaWxsPSIjMkU3RDMyIi8+CiAgICA8ZWxsaXBzZSBjeD0iMTcwMCIgY3k9IjU5NSIgcng9IjE0IiByeT0iMjgiIGZpbGw9IiMxQjVFMjAiLz4KICAgIDxlbGxpcHNlIGN4PSIxNzMwIiBjeT0iNTkwIiByeD0iMTEiIHJ5PSIyMiIgZmlsbD0iIzJFN0QzMiIvPgogIDwvZz4KICA8IS0tIEZvcmVncm91bmQgdHJlZXMgLS0+CiAgPGcgb3BhY2l0eT0iMC44Ij4KICAgIDxlbGxpcHNlIGN4PSIxMDAiIGN5PSI3ODAiIHJ4PSIyMCIgcnk9IjQwIiBmaWxsPSIjMUI1RTIwIi8+CiAgICA8ZWxsaXBzZSBjeD0iMTQwIiBjeT0iNzc1IiByeD0iMTgiIHJ5PSIzNSIgZmlsbD0iIzJFN0QzMiIvPgogICAgPGVsbGlwc2UgY3g9IjM1MCIgY3k9Ijc2MCIgcng9IjIyIiByeT0iNDQiIGZpbGw9IiMxQjVFMjAiLz4KICAgIDxlbGxpcHNlIGN4PSIzOTAiIGN5PSI3NTUiIHJ4PSIxOCIgcnk9IjM2IiBmaWxsPSIjMkU3RDMyIi8+CiAgICA8ZWxsaXBzZSBjeD0iNjUwIiBjeT0iNzQwIiByeD0iMjAiIHJ5PSI0MCIgZmlsbD0iIzFCNUUyMCIvPgogICAgPGVsbGlwc2UgY3g9IjY5MCIgY3k9IjczNSIgcng9IjE2IiByeT0iMzIiIGZpbGw9IiMyRTdEMzIiLz4KICAgIDxlbGxpcHNlIGN4PSIxMDAwIiBjeT0iNzUwIiByeD0iMjIiIHJ5PSI0NCIgZmlsbD0iIzFCNUUyMCIvPgogICAgPGVsbGlwc2UgY3g9IjEwNDAiIGN5PSI3NDUiIHJ4PSIxOCIgcnk9IjM2IiBmaWxsPSIjMkU3RDMyIi8+CiAgICA8ZWxsaXBzZSBjeD0iMTMwMCIgY3k9Ijc0MCIgcng9IjIwIiByeT0iNDAiIGZpbGw9IiMxQjVFMjAiLz4KICAgIDxlbGxpcHNlIGN4PSIxMzQwIiBjeT0iNzM1IiByeD0iMTYiIHJ5PSIzMiIgZmlsbD0iIzJFN0QzMiIvPgogICAgPGVsbGlwc2UgY3g9IjE2MDAiIGN5PSI3NTAiIHJ4PSIyMiIgcnk9IjQ0IiBmaWxsPSIjMUI1RTIwIi8+CiAgICA8ZWxsaXBzZSBjeD0iMTY0MCIgY3k9Ijc0NSIgcng9IjE4IiByeT0iMzYiIGZpbGw9IiMyRTdEMzIiLz4KICAgIDxlbGxpcHNlIGN4PSIxODUwIiBjeT0iNzYwIiByeD0iMjAiIHJ5PSI0MCIgZmlsbD0iIzFCNUUyMCIvPgogIDwvZz4KICA8IS0tIENsb3VkcyAtLT4KICA8ZyBvcGFjaXR5PSIwLjciPgogICAgPGVsbGlwc2UgY3g9IjMwMCIgY3k9IjEyMCIgcng9IjgwIiByeT0iMzAiIGZpbGw9IndoaXRlIi8+CiAgICA8ZWxsaXBzZSBjeD0iMzYwIiBjeT0iMTEwIiByeD0iNjAiIHJ5PSIyNSIgZmlsbD0id2hpdGUiLz4KICAgIDxlbGxpcHNlIGN4PSIyNTAiIGN5PSIxMTUiIHJ4PSI1MCIgcnk9IjIwIiBmaWxsPSJ3aGl0ZSIvPgogICAgPGVsbGlwc2UgY3g9IjkwMCIgY3k9IjgwIiByeD0iOTAiIHJ5PSIzNSIgZmlsbD0id2hpdGUiLz4KICAgIDxlbGxpcHNlIGN4PSI5NzAiIGN5PSI3MCIgcng9IjcwIiByeT0iMjgiIGZpbGw9IndoaXRlIi8+CiAgICA8ZWxsaXBzZSBjeD0iODQwIiBjeT0iNzUiIHJ4PSI1NSIgcnk9IjIyIiBmaWxsPSJ3aGl0ZSIvPgogICAgPGVsbGlwc2UgY3g9IjEzMDAiIGN5PSIxNDAiIHJ4PSI3NSIgcnk9IjI4IiBmaWxsPSJ3aGl0ZSIvPgogICAgPGVsbGlwc2UgY3g9IjEzNjAiIGN5PSIxMzAiIHJ4PSI1NSIgcnk9IjIyIiBmaWxsPSJ3aGl0ZSIvPgogIDwvZz4KICA8IS0tIEJpcmRzIC0tPgogIDxnIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzMzMyIgc3Ryb2tlLXdpZHRoPSIxLjUiIG9wYWNpdHk9IjAuNCI+CiAgICA8cGF0aCBkPSJNNzAwLDE4MCBRNzA1LDE3NSA3MTAsMTgwIFE3MTUsMTc1IDcyMCwxODAiLz4KICAgIDxwYXRoIGQ9Ik03NTAsMTYwIFE3NTUsMTU1IDc2MCwxNjAgUTc2NSwxNTUgNzcwLDE2MCIvPgogICAgPHBhdGggZD0iTTEyMDAsMjAwIFExMjA1LDE5NSAxMjEwLDIwMCBRMTIxNSwxOTUgMTIyMCwyMDAiLz4KICA8L2c+Cjwvc3ZnPg==");
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.title("User Access Details")
+    st.subheader("Login Required")
+
+    username = st.text_input("Username", key="login_username")
+    password = st.text_input("Password", type="password", key="login_password")
+
+    if st.button("Login"):
+        if username and password:
+            result = conn.query(
+                f"SELECT COUNT(*) AS CNT FROM META_DATA_DB.TABLES_SCHEMA.APP_PASSWORDS "
+                f"WHERE UPPER(USERNAME) = UPPER('{username}') AND PASSWORD_HASH = SHA2('{password}')",
+                ttl=0
+            )
+            if result.iloc[0]["CNT"] > 0:
+                st.session_state["authenticated"] = True
+                st.session_state["logged_in_user"] = username
+                st.rerun()
+            else:
+                st.error("Invalid username or password.")
+        else:
+            st.warning("Please enter both username and password.")
+    st.stop()
+
+check_password()
+# --- End Password Gate ---
+
 current_role = conn.query("SELECT CURRENT_ROLE() AS ROLE", ttl=0).iloc[0]["ROLE"]
 is_admin = current_role == "ACCOUNTADMIN"
 
@@ -26,13 +70,17 @@ st.markdown("""
         text-align: left;
     }
     .stApp {
-        background: linear-gradient(135deg, #e8f4f8 0%, #d4e9f7 50%, #c8dff0 100%);
+        background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOTIwIDEwODAiPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJza3kiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6Izg3Q0VFQiIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjQwJSIgc3R5bGU9InN0b3AtY29sb3I6I0IwRTBFNiIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjcwJSIgc3R5bGU9InN0b3AtY29sb3I6I0UwRjdGQSIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iaGlsbDEiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6IzRDQUY1MCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMyRTdEMzIiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImhpbGwyIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMzODhFM0MiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMUI1RTIwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJoaWxsMyIgeDE9IjAlIiB5MT0iMCUiIHgyPSIwJSIgeTI9IjEwMCUiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMkU3RDMyIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3R5bGU9InN0b3AtY29sb3I6IzFCNUUyMCIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iaGlsbDQiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6IzY2QkI2QSIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiM0M0EwNDciLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImhpbGw1IiB4MT0iMCUiIHkxPSIwJSIgeDI9IjAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiM4MUM3ODQiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojNENBRjUwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPHJhZGlhbEdyYWRpZW50IGlkPSJzdW4iIGN4PSI4MCUiIGN5PSIxNSUiIHI9IjglIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6I0ZGRjlDNCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjcwJSIgc3R5bGU9InN0b3AtY29sb3I6I0ZGRjE3NiIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNGRkVFNTg7c3RvcC1vcGFjaXR5OjAiLz4KICAgIDwvcmFkaWFsR3JhZGllbnQ+CiAgICA8ZmlsdGVyIGlkPSJibHVyMSI+PGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMiIvPjwvZmlsdGVyPgogICAgPGZpbHRlciBpZD0iYmx1cjIiPjxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjEiLz48L2ZpbHRlcj4KICA8L2RlZnM+CiAgPCEtLSBTa3kgLS0+CiAgPHJlY3Qgd2lkdGg9IjE5MjAiIGhlaWdodD0iMTA4MCIgZmlsbD0idXJsKCNza3kpIi8+CiAgPCEtLSBTdW4gZ2xvdyAtLT4KICA8Y2lyY2xlIGN4PSIxNTM2IiBjeT0iMTYyIiByPSIxNTQiIGZpbGw9InVybCgjc3VuKSIvPgogIDwhLS0gU3VuIC0tPgogIDxjaXJjbGUgY3g9IjE1MzYiIGN5PSIxNjIiIHI9IjUwIiBmaWxsPSIjRkZGOUM0IiBvcGFjaXR5PSIwLjkiLz4KICA8IS0tIERpc3RhbnQgbW91bnRhaW5zIChtaXN0eSkgLS0+CiAgPHBhdGggZD0iTTAsNTAwIFEyMDAsMzUwIDQwMCw0MjAgUTYwMCwzMjAgODAwLDQwMCBRMTAwMCwzMDAgMTIwMCwzODAgUTE0MDAsMzEwIDE2MDAsMzkwIFExODAwLDM0MCAxOTIwLDQwMCBMMTkyMCw2MDAgTDAsNjAwIFoiIGZpbGw9IiM1RDlCNkEiIG9wYWNpdHk9IjAuNCIgZmlsdGVyPSJ1cmwoI2JsdXIxKSIvPgogIDwhLS0gTWlkLWRpc3RhbmNlIGhpbGxzIC0tPgogIDxwYXRoIGQ9Ik0wLDU1MCBRMTUwLDQyMCAzNTAsNDgwIFE1NTAsMzgwIDc1MCw0NjAgUTk1MCwzNzAgMTE1MCw0NTAgUTEzNTAsMzgwIDE1NTAsNDQwIFExNzUwLDM5MCAxOTIwLDQ3MCBMMTkyMCw3MDAgTDAsNzAwIFoiIGZpbGw9InVybCgjaGlsbDUpIiBvcGFjaXR5PSIwLjciLz4KICA8IS0tIEhpbGwgbGF5ZXIgMSAoYmFjaykgLS0+CiAgPHBhdGggZD0iTTAsNjAwIFEyNDAsNDUwIDQ4MCw1MjAgUTcyMCw0MzAgOTYwLDUxMCBRMTIwMCw0MjAgMTQ0MCw1MDAgUTE2ODAsNDQwIDE5MjAsNTMwIEwxOTIwLDc4MCBMMCw3ODAgWiIgZmlsbD0idXJsKCNoaWxsNCkiLz4KICA8IS0tIEhpbGwgbGF5ZXIgMiAtLT4KICA8cGF0aCBkPSJNMCw2ODAgUTMwMCw1NjAgNjAwLDYyMCBROTAwLDUzMCAxMTAwLDYwMCBRMTMwMCw1NDAgMTUwMCw1OTAgUTE3MDAsNTUwIDE5MjAsNjIwIEwxOTIwLDg1MCBMMCw4NTAgWiIgZmlsbD0idXJsKCNoaWxsMSkiLz4KICA8IS0tIEhpbGwgbGF5ZXIgMyAtLT4KICA8cGF0aCBkPSJNMCw3NTAgUTI1MCw2NTAgNTAwLDcwMCBRNzUwLDY0MCAxMDAwLDY5MCBRMTI1MCw2MzAgMTUwMCw2ODAgUTE3NTAsNjUwIDE5MjAsNzAwIEwxOTIwLDkyMCBMMCw5MjAgWiIgZmlsbD0idXJsKCNoaWxsMikiLz4KICA8IS0tIEZvcmVncm91bmQgaGlsbCAtLT4KICA8cGF0aCBkPSJNMCw4NTAgUTIwMCw3NzAgNDUwLDgxMCBRNzAwLDc1MCA5NTAsODAwIFExMjAwLDc2MCAxNDUwLDc5MCBRMTcwMCw3NzAgMTkyMCw4MTAgTDE5MjAsMTA4MCBMMCwxMDgwIFoiIGZpbGw9InVybCgjaGlsbDMpIi8+CiAgPCEtLSBUcmVlcyBvbiBoaWxscyAoc2ltcGxpZmllZCkgLS0+CiAgPGcgb3BhY2l0eT0iMC42Ij4KICAgIDxlbGxpcHNlIGN4PSIyMDAiIGN5PSI2MjAiIHJ4PSIxNSIgcnk9IjMwIiBmaWxsPSIjMUI1RTIwIi8+CiAgICA8ZWxsaXBzZSBjeD0iMjMwIiBjeT0iNjE1IiByeD0iMTIiIHJ5PSIyNSIgZmlsbD0iIzJFN0QzMiIvPgogICAgPGVsbGlwc2UgY3g9IjI2MCIgY3k9IjYyMiIgcng9IjE0IiByeT0iMjgiIGZpbGw9IiMxQjVFMjAiLz4KICAgIDxlbGxpcHNlIGN4PSI1MDAiIGN5PSI1OTAiIHJ4PSIxNiIgcnk9IjMyIiBmaWxsPSIjMUI1RTIwIi8+CiAgICA8ZWxsaXBzZSBjeD0iNTMwIiBjeT0iNTg1IiByeD0iMTMiIHJ5PSIyNiIgZmlsbD0iIzJFN0QzMiIvPgogICAgPGVsbGlwc2UgY3g9IjgwMCIgY3k9IjYwMCIgcng9IjE1IiByeT0iMzAiIGZpbGw9IiMxQjVFMjAiLz4KICAgIDxlbGxpcHNlIGN4PSI4MzAiIGN5PSI1OTUiIHJ4PSIxMiIgcnk9IjI0IiBmaWxsPSIjMkU3RDMyIi8+CiAgICA8ZWxsaXBzZSBjeD0iODYwIiBjeT0iNjAyIiByeD0iMTQiIHJ5PSIyOCIgZmlsbD0iIzFCNUUyMCIvPgogICAgPGVsbGlwc2UgY3g9IjExMDAiIGN5PSI1ODAiIHJ4PSIxNiIgcnk9IjMyIiBmaWxsPSIjMkU3RDMyIi8+CiAgICA8ZWxsaXBzZSBjeD0iMTEzMCIgY3k9IjU3NSIgcng9IjEzIiByeT0iMjYiIGZpbGw9IiMxQjVFMjAiLz4KICAgIDxlbGxpcHNlIGN4PSIxNDAwIiBjeT0iNTkwIiByeD0iMTUiIHJ5PSIzMCIgZmlsbD0iIzFCNUUyMCIvPgogICAgPGVsbGlwc2UgY3g9IjE0MzAiIGN5PSI1ODUiIHJ4PSIxMiIgcnk9IjI0IiBmaWxsPSIjMkU3RDMyIi8+CiAgICA8ZWxsaXBzZSBjeD0iMTcwMCIgY3k9IjU5NSIgcng9IjE0IiByeT0iMjgiIGZpbGw9IiMxQjVFMjAiLz4KICAgIDxlbGxpcHNlIGN4PSIxNzMwIiBjeT0iNTkwIiByeD0iMTEiIHJ5PSIyMiIgZmlsbD0iIzJFN0QzMiIvPgogIDwvZz4KICA8IS0tIEZvcmVncm91bmQgdHJlZXMgLS0+CiAgPGcgb3BhY2l0eT0iMC44Ij4KICAgIDxlbGxpcHNlIGN4PSIxMDAiIGN5PSI3ODAiIHJ4PSIyMCIgcnk9IjQwIiBmaWxsPSIjMUI1RTIwIi8+CiAgICA8ZWxsaXBzZSBjeD0iMTQwIiBjeT0iNzc1IiByeD0iMTgiIHJ5PSIzNSIgZmlsbD0iIzJFN0QzMiIvPgogICAgPGVsbGlwc2UgY3g9IjM1MCIgY3k9Ijc2MCIgcng9IjIyIiByeT0iNDQiIGZpbGw9IiMxQjVFMjAiLz4KICAgIDxlbGxpcHNlIGN4PSIzOTAiIGN5PSI3NTUiIHJ4PSIxOCIgcnk9IjM2IiBmaWxsPSIjMkU3RDMyIi8+CiAgICA8ZWxsaXBzZSBjeD0iNjUwIiBjeT0iNzQwIiByeD0iMjAiIHJ5PSI0MCIgZmlsbD0iIzFCNUUyMCIvPgogICAgPGVsbGlwc2UgY3g9IjY5MCIgY3k9IjczNSIgcng9IjE2IiByeT0iMzIiIGZpbGw9IiMyRTdEMzIiLz4KICAgIDxlbGxpcHNlIGN4PSIxMDAwIiBjeT0iNzUwIiByeD0iMjIiIHJ5PSI0NCIgZmlsbD0iIzFCNUUyMCIvPgogICAgPGVsbGlwc2UgY3g9IjEwNDAiIGN5PSI3NDUiIHJ4PSIxOCIgcnk9IjM2IiBmaWxsPSIjMkU3RDMyIi8+CiAgICA8ZWxsaXBzZSBjeD0iMTMwMCIgY3k9Ijc0MCIgcng9IjIwIiByeT0iNDAiIGZpbGw9IiMxQjVFMjAiLz4KICAgIDxlbGxpcHNlIGN4PSIxMzQwIiBjeT0iNzM1IiByeD0iMTYiIHJ5PSIzMiIgZmlsbD0iIzJFN0QzMiIvPgogICAgPGVsbGlwc2UgY3g9IjE2MDAiIGN5PSI3NTAiIHJ4PSIyMiIgcnk9IjQ0IiBmaWxsPSIjMUI1RTIwIi8+CiAgICA8ZWxsaXBzZSBjeD0iMTY0MCIgY3k9Ijc0NSIgcng9IjE4IiByeT0iMzYiIGZpbGw9IiMyRTdEMzIiLz4KICAgIDxlbGxpcHNlIGN4PSIxODUwIiBjeT0iNzYwIiByeD0iMjAiIHJ5PSI0MCIgZmlsbD0iIzFCNUUyMCIvPgogIDwvZz4KICA8IS0tIENsb3VkcyAtLT4KICA8ZyBvcGFjaXR5PSIwLjciPgogICAgPGVsbGlwc2UgY3g9IjMwMCIgY3k9IjEyMCIgcng9IjgwIiByeT0iMzAiIGZpbGw9IndoaXRlIi8+CiAgICA8ZWxsaXBzZSBjeD0iMzYwIiBjeT0iMTEwIiByeD0iNjAiIHJ5PSIyNSIgZmlsbD0id2hpdGUiLz4KICAgIDxlbGxpcHNlIGN4PSIyNTAiIGN5PSIxMTUiIHJ4PSI1MCIgcnk9IjIwIiBmaWxsPSJ3aGl0ZSIvPgogICAgPGVsbGlwc2UgY3g9IjkwMCIgY3k9IjgwIiByeD0iOTAiIHJ5PSIzNSIgZmlsbD0id2hpdGUiLz4KICAgIDxlbGxpcHNlIGN4PSI5NzAiIGN5PSI3MCIgcng9IjcwIiByeT0iMjgiIGZpbGw9IndoaXRlIi8+CiAgICA8ZWxsaXBzZSBjeD0iODQwIiBjeT0iNzUiIHJ4PSI1NSIgcnk9IjIyIiBmaWxsPSJ3aGl0ZSIvPgogICAgPGVsbGlwc2UgY3g9IjEzMDAiIGN5PSIxNDAiIHJ4PSI3NSIgcnk9IjI4IiBmaWxsPSJ3aGl0ZSIvPgogICAgPGVsbGlwc2UgY3g9IjEzNjAiIGN5PSIxMzAiIHJ4PSI1NSIgcnk9IjIyIiBmaWxsPSJ3aGl0ZSIvPgogIDwvZz4KICA8IS0tIEJpcmRzIC0tPgogIDxnIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzMzMyIgc3Ryb2tlLXdpZHRoPSIxLjUiIG9wYWNpdHk9IjAuNCI+CiAgICA8cGF0aCBkPSJNNzAwLDE4MCBRNzA1LDE3NSA3MTAsMTgwIFE3MTUsMTc1IDcyMCwxODAiLz4KICAgIDxwYXRoIGQ9Ik03NTAsMTYwIFE3NTUsMTU1IDc2MCwxNjAgUTc2NSwxNTUgNzcwLDE2MCIvPgogICAgPHBhdGggZD0iTTEyMDAsMjAwIFExMjA1LDE5NSAxMjEwLDIwMCBRMTIxNSwxOTUgMTIyMCwyMDAiLz4KICA8L2c+Cjwvc3ZnPg==");
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
     }
     .stApp > header {
         background-color: transparent;
     }
     [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #d4e9f7 0%, #b8d4e8 100%);
+        background: linear-gradient(180deg, rgba(46,125,50,0.85) 0%, rgba(27,94,32,0.9) 50%, rgba(76,175,80,0.85) 100%);
     }
     h1 {
         color: #1b4965 !important;
@@ -142,7 +190,7 @@ if request_type == "Generic Access Request :[ DOP/ETL/RPT ]":
             tenant_name = st.text_input("Enter Tenant Name")
             subtenant_name = st.text_input("Enter Subtenant Name")
             project_name = st.text_input("Enter Project Name")
-            schema_name = st.text_input("Schemas to be created")
+            schema_name = st.text_input("Schema names(Comma seperated for multiple schema)")
             if tenant_name and subtenant_name and project_name:
                 st.success(f"Selected: {tenant_name} → {subtenant_name} → {project_name}")
         else:
@@ -154,7 +202,7 @@ if request_type == "Generic Access Request :[ DOP/ETL/RPT ]":
             if selected_subtenant == "New":
                 subtenant_name = st.text_input("Enter Subtenant Name")
                 project_name = st.text_input("Enter Project Name")
-                schema_name = st.text_input("Schemas to be created")
+                schema_name = st.text_input("Schema names(Comma seperated for multiple schema)")
                 if subtenant_name and project_name:
                     st.success(f"Selected: {selected_tenant} → {subtenant_name} → {project_name}")
             else:
@@ -165,7 +213,7 @@ if request_type == "Generic Access Request :[ DOP/ETL/RPT ]":
 
                 if selected_project == "New":
                     project_name = st.text_input("Enter Project Name")
-                    schema_name = st.text_input("Schemas to be created")
+                    schema_name = st.text_input("Schema names(Comma seperated for multiple schema)")
                     if project_name:
                         st.success(f"Selected: {selected_tenant} → {selected_subtenant} → {project_name}")
                 else:
@@ -184,7 +232,14 @@ if request_type == "Generic Access Request :[ DOP/ETL/RPT ]":
                     selected_envs.append((env_label, env_code))
 
         if selected_envs:
-            create_new_user = st.radio("Create New User :", ["Yes", "No"], index=None, horizontal=True, key=f"generic_create_new_user_{gr}")
+            is_new_tenant_or_sub_or_proj = (selected_tenant == "New" or
+                                            (selected_subtenant is not None and selected_subtenant == "New") or
+                                            (selected_project is not None and selected_project == "New"))
+
+            if not is_new_tenant_or_sub_or_proj:
+                create_new_user = st.radio("Create New User :", ["Yes", "No"], index=None, horizontal=True, key=f"generic_create_new_user_{gr}")
+            else:
+                create_new_user = "No"
 
             if create_new_user == "Yes":
                 for env_label, env_code in selected_envs:
@@ -210,17 +265,26 @@ if request_type == "Generic Access Request :[ DOP/ETL/RPT ]":
                     st.markdown(f"---")
                     num_dop = st.selectbox(f"Number of users needed access [{env_label}-DOP Role]", list(range(0, 11)), key=f"num_dop_{env_code}_{gr}")
                     for i in range(1, num_dop + 1):
-                        dop_label = f"{env_label}-DOP User Email or User name" if num_dop == 1 else f"{env_label}-DOP User-{i} Email or User-{i} name"
+                        if is_new_tenant_or_sub_or_proj:
+                            dop_label = f"{env_label}-DOP User Email" if num_dop == 1 else f"{env_label}-DOP User-{i} Email"
+                        else:
+                            dop_label = f"{env_label}-DOP User Email or User name" if num_dop == 1 else f"{env_label}-DOP User-{i} Email or User-{i} name"
                         st.text_input(dop_label, key=f"dop_user_email_{env_code}_{i}_{gr}")
 
                     num_etl = st.selectbox(f"Number of users needed access [{env_label}-ETL Role]", list(range(0, 11)), key=f"num_etl_{env_code}_{gr}")
                     for i in range(1, num_etl + 1):
-                        etl_label = f"{env_label}-ETL User Email or User name" if num_etl == 1 else f"{env_label}-ETL User-{i} Email or User-{i} name"
+                        if is_new_tenant_or_sub_or_proj:
+                            etl_label = f"{env_label}-ETL User Email" if num_etl == 1 else f"{env_label}-ETL User-{i} Email"
+                        else:
+                            etl_label = f"{env_label}-ETL User Email or User name" if num_etl == 1 else f"{env_label}-ETL User-{i} Email or User-{i} name"
                         st.text_input(etl_label, key=f"etl_user_email_{env_code}_{i}_{gr}")
 
                     num_rpt = st.selectbox(f"Number of users needed access [{env_label}-RPT Role]", list(range(0, 11)), key=f"num_rpt_{env_code}_{gr}")
                     for i in range(1, num_rpt + 1):
-                        rpt_label = f"{env_label}-RPT User Email or User name" if num_rpt == 1 else f"{env_label}-RPT User-{i} Email or User-{i} name"
+                        if is_new_tenant_or_sub_or_proj:
+                            rpt_label = f"{env_label}-RPT User Email" if num_rpt == 1 else f"{env_label}-RPT User-{i} Email"
+                        else:
+                            rpt_label = f"{env_label}-RPT User Email or User name" if num_rpt == 1 else f"{env_label}-RPT User-{i} Email or User-{i} name"
                         st.text_input(rpt_label, key=f"rpt_user_email_{env_code}_{i}_{gr}")
 
         if st.button("Submit", key="generic_submit"):
@@ -232,6 +296,19 @@ if request_type == "Generic Access Request :[ DOP/ETL/RPT ]":
                 validation_errors.append("At least one environment must be selected.")
 
             create_new_user_val = st.session_state.get(f"generic_create_new_user_{gr}", None)
+
+            # When tenant/subtenant/project is "New", the radio is hidden and defaults to "No"
+            is_new_selection = (selected_tenant == "New" or
+                               (selected_subtenant is not None and selected_subtenant == "New") or
+                               (selected_project is not None and selected_project == "New"))
+            if is_new_selection and create_new_user_val is None:
+                create_new_user_val = "No"
+
+            # Validate schema names when New is selected
+            if is_new_selection:
+                schema_input = locals().get('schema_name', '') or ''
+                if not schema_input.strip():
+                    validation_errors.append("Schema names cannot be left blank.")
 
             if create_new_user_val == "Yes":
                 # Validate new user name fields
@@ -347,14 +424,46 @@ if request_type == "Generic Access Request :[ DOP/ETL/RPT ]":
                             if email:
                                 users_to_insert.append((email, f"{env_label}-RPT Role", env_label))
 
-                if users_to_insert:
+                # Get schema names if provided (for New tenant/subtenant/project)
+                schema_val = 'NA'
+                if is_new_selection:
+                    schema_input = locals().get('schema_name', '') or ''
+                    if schema_input.strip():
+                        schema_val = schema_input.strip()
+
+                if is_new_selection:
+                    session = conn.session()
+                    # Determine request type based on what is "New"
+                    if selected_tenant == "New":
+                        onboarding_type = "New Tenant Onboarding"
+                    elif selected_subtenant is not None and selected_subtenant == "New":
+                        onboarding_type = "New Subtenant Onboarding"
+                    else:
+                        onboarding_type = "New Project"
+                    # Insert one entry for schema names with USER = 'NA'
+                    session.sql(
+                        f"""INSERT INTO META_DATA_DB.TABLES_SCHEMA.ACCESS_REQUEST
+                            (TENANT, SUBTENANT, PROJECT, REQUEST_TYPE, "USER", ENVIRONMENT, SCHEMA, OBJECTS, OBJECT_NAMES, INSERT_TIME)
+                            VALUES ('{t_val}', '{s_val}', '{p_val}', '{onboarding_type}', 'NA', 'NA', '{schema_val}', 'NA', 'NA', CURRENT_TIMESTAMP())"""
+                    ).collect()
+                    # Insert entries for each user with SCHEMA = 'NA'
+                    for user_email, role_type, env_label in users_to_insert:
+                        session.sql(
+                            f"""INSERT INTO META_DATA_DB.TABLES_SCHEMA.ACCESS_REQUEST
+                                (TENANT, SUBTENANT, PROJECT, REQUEST_TYPE, "USER", ENVIRONMENT, SCHEMA, OBJECTS, OBJECT_NAMES, INSERT_TIME)
+                                VALUES ('{t_val}', '{s_val}', '{p_val}', '{role_type}', '{user_email}', '{env_label}', 'NA', 'NA', 'NA', CURRENT_TIMESTAMP())"""
+                        ).collect()
+                    st.session_state["show_success"] = True
+                    st.session_state["generic_reset"] += 1
+                    st.rerun()
+                elif users_to_insert:
                     insert_count = 0
                     session = conn.session()
                     for user_email, role_type, env_label in users_to_insert:
                         session.sql(
                             f"""INSERT INTO META_DATA_DB.TABLES_SCHEMA.ACCESS_REQUEST
                                 (TENANT, SUBTENANT, PROJECT, REQUEST_TYPE, "USER", ENVIRONMENT, SCHEMA, OBJECTS, OBJECT_NAMES, INSERT_TIME)
-                                VALUES ('{t_val}', '{s_val}', '{p_val}', '{role_type}', '{user_email}', '{env_label}', NULL, NULL, NULL, CURRENT_TIMESTAMP())"""
+                                VALUES ('{t_val}', '{s_val}', '{p_val}', '{role_type}', '{user_email}', '{env_label}', 'NA', 'NA', 'NA', CURRENT_TIMESTAMP())"""
                         ).collect()
                         insert_count += 1
                     st.session_state["show_success"] = True
@@ -786,7 +895,6 @@ else:
                     st.checkbox("Agent Usage", key=f"ai_role_agent_usage_{ai_sr}")
                 with rc2:
                     st.checkbox("Create Cortex Search Service", key=f"ai_role_cortex_search_{ai_sr}")
-                    st.checkbox("Copilot access", key=f"ai_role_copilot_access_{ai_sr}")
                 with rc3:
                     st.checkbox("Create Semantic View", key=f"ai_role_semantic_view_{ai_sr}")
                     st.checkbox("Agent Monitoring", key=f"ai_role_agent_monitoring_{ai_sr}")
@@ -798,15 +906,14 @@ else:
                     ("Cortex Services/Functions", f"ai_role_cortex_services_{ai_sr}"),
                     ("Agent Usage", f"ai_role_agent_usage_{ai_sr}"),
                     ("Create Cortex Search Service", f"ai_role_cortex_search_{ai_sr}"),
-                    ("Copilot access", f"ai_role_copilot_access_{ai_sr}"),
                     ("Create Semantic View", f"ai_role_semantic_view_{ai_sr}"),
                     ("Agent Monitoring", f"ai_role_agent_monitoring_{ai_sr}"),
                 ]:
                     if st.session_state.get(role_key, False):
                         selected_ai_roles.append(role_name)
 
-                # Show schemas only if non-Copilot roles are checked
-                schema_roles = [r for r in selected_ai_roles if r != "Copilot access"]
+                # Show schemas for selected roles
+                schema_roles = selected_ai_roles
 
                 if schema_roles:
                     for env_label, env_code in selected_envs:
@@ -850,7 +957,6 @@ else:
                             st.checkbox("Agent Usage", key=f"ai_diff_role_agent_usage_{i}_{env_code}_{ai_sr}")
                         with rc2:
                             st.checkbox("Create Cortex Search Service", key=f"ai_diff_role_cortex_search_{i}_{env_code}_{ai_sr}")
-                            st.checkbox("Copilot access", key=f"ai_diff_role_copilot_access_{i}_{env_code}_{ai_sr}")
                         with rc3:
                             st.checkbox("Create Semantic View", key=f"ai_diff_role_semantic_view_{i}_{env_code}_{ai_sr}")
                             st.checkbox("Agent Monitoring", key=f"ai_diff_role_agent_monitoring_{i}_{env_code}_{ai_sr}")
@@ -862,15 +968,14 @@ else:
                             ("Cortex Services/Functions", f"ai_diff_role_cortex_services_{i}_{env_code}_{ai_sr}"),
                             ("Agent Usage", f"ai_diff_role_agent_usage_{i}_{env_code}_{ai_sr}"),
                             ("Create Cortex Search Service", f"ai_diff_role_cortex_search_{i}_{env_code}_{ai_sr}"),
-                            ("Copilot access", f"ai_diff_role_copilot_access_{i}_{env_code}_{ai_sr}"),
                             ("Create Semantic View", f"ai_diff_role_semantic_view_{i}_{env_code}_{ai_sr}"),
                             ("Agent Monitoring", f"ai_diff_role_agent_monitoring_{i}_{env_code}_{ai_sr}"),
                         ]:
                             if st.session_state.get(role_key, False):
                                 user_ai_roles.append(role_name)
 
-                        # Show schemas only if non-Copilot roles are checked
-                        user_schema_roles = [r for r in user_ai_roles if r != "Copilot access"]
+                        # Show schemas for selected roles
+                        user_schema_roles = user_ai_roles
 
                         if user_schema_roles:
                             db_name = f"{tenant_code}_{subtenant_code}_{selected_project}_{env_code}_DB"
@@ -921,7 +1026,6 @@ else:
                             ("Cortex Services/Functions", f"ai_role_cortex_services_{ai_sr}"),
                             ("Agent Usage", f"ai_role_agent_usage_{ai_sr}"),
                             ("Create Cortex Search Service", f"ai_role_cortex_search_{ai_sr}"),
-                            ("Copilot access", f"ai_role_copilot_access_{ai_sr}"),
                             ("Create Semantic View", f"ai_role_semantic_view_{ai_sr}"),
                             ("Agent Monitoring", f"ai_role_agent_monitoring_{ai_sr}"),
                         ]:
@@ -932,8 +1036,7 @@ else:
                             ai_validation_errors.append("At least one AI role must be selected.")
 
                         # Collect checked schemas per env
-                        schema_roles = [r for r in selected_ai_roles if r != "Copilot access"]
-                        has_copilot = "Copilot access" in selected_ai_roles
+                        schema_roles = selected_ai_roles
 
                         checked_schemas_by_env = {}
                         for env_label, env_code in selected_envs:
@@ -947,13 +1050,11 @@ else:
                         if schema_roles:
                             for env_label, env_code in selected_envs:
                                 if not checked_schemas_by_env.get(env_code):
-                                    ai_validation_errors.append(f"{env_label}: At least one schema must be selected for non-Copilot roles.")
+                                    ai_validation_errors.append(f"{env_label}: At least one schema must be selected.")
 
                         if not ai_validation_errors:
                             for user_email in user_emails:
                                 for env_label, env_code in selected_envs:
-                                    if has_copilot:
-                                        ai_rows_to_insert.append((user_email, "Copilot access", env_label, None))
                                     for role_label in schema_roles:
                                         for schema_name in checked_schemas_by_env.get(env_code, []):
                                             ai_rows_to_insert.append((user_email, role_label, env_label, schema_name))
@@ -979,7 +1080,6 @@ else:
                                     ("Cortex Services/Functions", f"ai_diff_role_cortex_services_{i}_{env_code}_{ai_sr}"),
                                     ("Agent Usage", f"ai_diff_role_agent_usage_{i}_{env_code}_{ai_sr}"),
                                     ("Create Cortex Search Service", f"ai_diff_role_cortex_search_{i}_{env_code}_{ai_sr}"),
-                                    ("Copilot access", f"ai_diff_role_copilot_access_{i}_{env_code}_{ai_sr}"),
                                     ("Create Semantic View", f"ai_diff_role_semantic_view_{i}_{env_code}_{ai_sr}"),
                                     ("Agent Monitoring", f"ai_diff_role_agent_monitoring_{i}_{env_code}_{ai_sr}"),
                                 ]:
@@ -990,8 +1090,7 @@ else:
                                     ai_validation_errors.append(f"User-{i} ({env_label}): At least one AI role must be selected.")
                                     continue
 
-                                user_schema_roles = [r for r in user_roles if r != "Copilot access"]
-                                user_has_copilot = "Copilot access" in user_roles
+                                user_schema_roles = user_roles
 
                                 user_schemas = []
                                 for key, val in st.session_state.items():
@@ -1000,11 +1099,9 @@ else:
                                         user_schemas.append(schema_name)
 
                                 if user_schema_roles and not user_schemas:
-                                    ai_validation_errors.append(f"User-{i} ({env_label}): At least one schema must be selected for non-Copilot roles.")
+                                    ai_validation_errors.append(f"User-{i} ({env_label}): At least one schema must be selected.")
                                     continue
 
-                                if user_has_copilot:
-                                    ai_rows_to_insert.append((email, "Copilot access", env_label, None))
                                 for role_label in user_schema_roles:
                                     for schema_name in user_schemas:
                                         ai_rows_to_insert.append((email, role_label, env_label, schema_name))
@@ -1016,11 +1113,11 @@ else:
                         if ai_rows_to_insert:
                             session = conn.session()
                             for user_email, request_type_val, env_label, schema_val in ai_rows_to_insert:
-                                schema_sql = f"'{schema_val}'" if schema_val else "NULL"
+                                schema_sql = f"'{schema_val}'" if schema_val else "'NA'"
                                 session.sql(
                                     f"""INSERT INTO META_DATA_DB.TABLES_SCHEMA.ACCESS_REQUEST
                                         (TENANT, SUBTENANT, PROJECT, REQUEST_TYPE, "USER", ENVIRONMENT, SCHEMA, OBJECTS, OBJECT_NAMES, INSERT_TIME)
-                                        VALUES ('{t_val}', '{s_val}', '{p_val}', '{request_type_val}', '{user_email}', '{env_label}', {schema_sql}, NULL, NULL, CURRENT_TIMESTAMP())"""
+                                        VALUES ('{t_val}', '{s_val}', '{p_val}', '{request_type_val}', '{user_email}', '{env_label}', {schema_sql}, 'NA', 'NA', CURRENT_TIMESTAMP())"""
                                 ).collect()
                             st.session_state["show_success"] = True
                             st.session_state["ai_reset"] += 1

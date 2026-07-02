@@ -1,3 +1,24 @@
+CREATE USER RAF_USER
+  TYPE = 'PERSON'
+  PASSWORD = 'Str0ng@Pass123!'
+  LOGIN_NAME = 'raf_user'
+  DISPLAY_NAME = 'Rafeek Peediyekkal'
+  EMAIL = 'rafeek@example.com'
+  DEFAULT_ROLE = COE_SYS_ADMIN
+  DEFAULT_WAREHOUSE = LOAD_WH
+  MUST_CHANGE_PASSWORD = FALSE;
+
+  CREATE ROLE streamlit_viewer;
+
+-- Grant minimum required privileges
+GRANT USAGE ON DATABASE meta_data_db TO ROLE streamlit_viewer;
+GRANT USAGE ON SCHEMA meta_data_db.tables_schema TO ROLE streamlit_viewer;
+GRANT USAGE ON STREAMLIT meta_data_db.tables_schema.TENANT_PROJECTS_APP TO ROLE streamlit_viewer;
+GRANT USAGE ON WAREHOUSE COMPUTE_WH TO ROLE streamlit_viewer;
+
+grant ROLE streamlit_viewer to user RAF_USER;
+
+
 -- Create Databases and schema
 CREATE DATABASE IF NOT EXISTS CNTRL_ITSS_OAD_DEV_DB;
 CREATE DATABASE IF NOT EXISTS CNTRL_ITSS_OAD_SIT_DB;
